@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CuboCraft</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    { "imports": { "three": "./lib/three.module.js" } }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="crosshair">+</div>
+
+  <div id="hotbar">
+    <div class="slot active" data-block="1"><span class="key">1</span>Grama</div>
+    <div class="slot" data-block="2"><span class="key">2</span>Terra</div>
+    <div class="slot" data-block="3"><span class="key">3</span>Pedra</div>
+    <div class="slot" data-block="4"><span class="key">4</span>Areia</div>
+    <div class="slot" data-block="5"><span class="key">5</span>Madeira</div>
+    <div class="slot" data-block="6"><span class="key">6</span>Folhas</div>
+  </div>
+
+  <div id="hud">
+    <div id="fps"></div>
+    <div id="pos"></div>
+  </div>
+
+  <div id="overlay">
+    <div class="panel">
+      <h1>CuboCraft</h1>
+      <p>Clique para jogar</p>
+      <ul>
+        <li><b>WASD</b> andar &nbsp;·&nbsp; <b>Espaço</b> pular &nbsp;·&nbsp; <b>Shift</b> correr</li>
+        <li><b>Botão esq.</b> quebrar &nbsp;·&nbsp; <b>Botão dir.</b> colocar</li>
+        <li><b>1–6</b> escolher bloco &nbsp;·&nbsp; <b>ESC</b> soltar o mouse</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

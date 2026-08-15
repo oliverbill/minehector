@@ -1,0 +1,53 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+
+body { font-family: 'Courier New', monospace; user-select: none; }
+
+#game { display: block; width: 100vw; height: 100vh; }
+
+#crosshair {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  color: #fff; font-size: 24px; text-shadow: 0 0 3px #000;
+  pointer-events: none;
+}
+
+#hotbar {
+  position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 6px; pointer-events: none;
+}
+
+#hotbar .slot {
+  background: rgba(0, 0, 0, 0.55); color: #ddd;
+  border: 2px solid #555; border-radius: 4px;
+  padding: 8px 12px; font-size: 13px; min-width: 76px; text-align: center;
+}
+
+#hotbar .slot.active { border-color: #fff; color: #fff; background: rgba(0, 0, 0, 0.75); }
+
+#hotbar .key { display: block; font-size: 10px; color: #999; margin-bottom: 2px; }
+
+#hud {
+  position: fixed; top: 10px; left: 10px; color: #fff;
+  font-size: 13px; text-shadow: 1px 1px 2px #000; pointer-events: none;
+}
+
+#overlay {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.65);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 10;
+}
+
+#overlay.hidden { display: none; }
+
+#overlay .panel {
+  background: rgba(20, 20, 30, 0.9); color: #eee;
+  border: 2px solid #667; border-radius: 8px;
+  padding: 32px 48px; text-align: center;
+}
+
+#overlay h1 { font-size: 32px; margin-bottom: 8px; letter-spacing: 2px; }
+
+#overlay p { font-size: 18px; color: #9cf; margin-bottom: 16px; }
+
+#overlay ul { list-style: none; font-size: 13px; line-height: 2; color: #bbb; }
