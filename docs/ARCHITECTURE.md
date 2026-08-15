@@ -135,11 +135,13 @@ Velocidade andar 4.3, correr 5.6, pulo vel.y = 8.5. Usa `moveEntity`.
 ```js
 export class Interaction {
   constructor(world, player, scene, input)
-  update()                 // raycast (alcance 5) a partir de eyePos na direção do olhar;
+  update()                 // raycast (alcance 6) a partir de eyePos na direção do olhar;
                            // move um LineSegments wireframe de destaque p/ o bloco mirado (ou esconde)
   selectedBlock            // id do bloco do hotbar (default GRASS)
 }
 ```
+
+**Nenhuma recusa silenciosa.** Clique que não faz nada é indistinguível de jogo quebrado. As duas recusas possíveis — não há bloco no alcance, e a cela ficaria dentro do jogador — dizem o motivo em `#toast`, e a mira ganha `.idle` quando não há alvo. O destaque do bloco mirado é branco com `depthTest: false`: um contorno preto translúcido desaparecia contra pedra e sombra. O alcance é 6 e não 5 porque com 5 o chão de um terreno que desce à frente cai a ~5,07 do olho e o clique morria calado.
 Registra em `input.onMouseButton`: esquerdo quebra (`setBlock AIR`), direito coloca `selectedBlock` em `prev` — recusando se a célula intersecta a AABB do jogador. Registra em `input.onKeyPress`: Digit1..Digit6 selecionam GRASS..LEAVES e atualizam a classe `.active` nos elementos `#hotbar .slot` (data-block já no HTML).
 
 ## js/bots/ (frente D)

@@ -40,7 +40,9 @@ export class Input {
       }
     });
 
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    // No documento inteiro, não só no canvas: um menu de contexto aberto rouba
+    // o pointer lock, e a partir daí todo clique do jogo deixa de responder.
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
   isDown(code) {

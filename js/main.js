@@ -36,6 +36,13 @@ async function boot() {
     overlay.classList.toggle('hidden', document.pointerLockElement === canvas);
   });
 
+  // Gancho de QA: com #debug na URL, o jogo fica dirigível por código. O pointer
+  // lock não é concedido a cliques automatizados, então sem isto não há como
+  // testar quebrar/colocar bloco num navegador controlado.
+  if (location.hash === '#debug') {
+    window.__game = { world, player, input, interaction, chunkRenderer, bots, camera, scene };
+  }
+
   const fpsEl = document.getElementById('fps');
   const posEl = document.getElementById('pos');
   let fpsAcc = 0, fpsFrames = 0;

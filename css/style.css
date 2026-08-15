@@ -12,6 +12,19 @@ body { font-family: 'Courier New', monospace; user-select: none; }
   pointer-events: none;
 }
 
+/* Mira apagada = não há bloco no alcance, então clicar não vai fazer nada. */
+#crosshair.idle { color: #888; opacity: 0.45; }
+
+#toast {
+  position: fixed; top: 58%; left: 50%; transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.72); color: #ffd9a0;
+  border: 1px solid #7a5c30; border-radius: 4px;
+  padding: 7px 14px; font-size: 13px; white-space: nowrap;
+  opacity: 0; transition: opacity 0.15s; pointer-events: none;
+}
+
+#toast.show { opacity: 1; }
+
 #hotbar {
   position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
   display: flex; gap: 6px; pointer-events: none;
