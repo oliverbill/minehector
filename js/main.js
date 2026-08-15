@@ -18,6 +18,11 @@ async function boot() {
   const atlas = createAtlas();
   const chunkRenderer = new ChunkRenderer(scene, world, atlas);
 
+  for (const slot of document.querySelectorAll('#hotbar .slot')) {
+    const sw = slot.querySelector('.sw');
+    if (sw) sw.style.backgroundImage = `url(${atlas.swatch(Number(slot.dataset.block))})`;
+  }
+
   const spawnY = world.surfaceHeight(8, 8) + 1;
   const player = new Player(world, { x: 8.5, y: spawnY, z: 8.5 });
 

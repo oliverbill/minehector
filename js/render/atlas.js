@@ -1,6 +1,10 @@
 // Atlas de texturas procedural — canvas 2D, células 16×16, pixel art.
-// Nenhuma imagem externa: cada textura é desenhada por código com ruído
-// determinístico de tom para não ficar chapada.
+// Nenhuma imagem externa: cada textura é desenhada por código.
+//
+// Regra de ouro deste arquivo: dois blocos diferentes têm de ser distinguíveis
+// num relance, de longe e de lado. Por isso cada material tem matiz própria E
+// um padrão próprio (pedrisco, estria, rachadura, cacho) — cor sozinha não
+// basta, porque terra, madeira e a lateral da grama são todas marrons.
 
 import * as THREE from 'three';
 import { Blocks } from '../constants.js';
@@ -20,7 +24,7 @@ const Cells = {
   LEAVES: 6,
 };
 
-// Ruído determinístico em [0, 1) por pixel/célula — sem Math.random.
+// Ruído determinístico em [0, 1) por pixel — sem Math.random.
 function hash2(x, y, salt) {
   let h = (x * 374761393 + y * 668265263 + salt * 2246822519) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -28,26 +32,30 @@ function hash2(x, y, salt) {
   return h / 4294967296;
 }
 
-function clamp255(v) {
-  return Math.max(0, Math.min(255, Math.round(v)));
-}
+const clamp255 = (v) => Math.max(0, Math.min(255, Math.round(v)));
 
-// Pinta um pixel com variação sutil de tom em torno da cor base.
-function px(ctx, cellX, cellY, x, y, [r, g, b], jitter, salt) {
-  const n = (hash2(cellX * CELL + x, cellY * CELL + y, salt) - 0.5) * 2 * jitter;
-  ctx.fillStyle = `rgb(${clamp255(r + n)},${clamp255(g + n)},${clamp255(b + n)})`;
-  ctx.fillRect(cellX * CELL + x, cellY * CELL + y, 1, 1);
+// Pinta um pixel da célula. `shade` desloca os três canais (sombra/luz).
+function px(ctx, cellIndex, x, y, [r, g, b], shade) {
+  const cellX = (cellIndex % COLS) * CELL;
+  const cellY = Math.floor(cellIndex / COLS) * CELL;
+  ctx.fillStyle = `rgb(${clamp255(r + shade)},${clamp255(g + shade)},${clamp255(b + shade)})`;
+  ctx.fillRect(cellX + x, cellY + y, 1, 1);
 }
 
 function drawCell(ctx, cellIndex, pixelFn) {
-  const cellX = cellIndex % COLS;
-  const cellY = Math.floor(cellIndex / COLS);
   for (let y = 0; y < CELL; y++) {
-    for (let x = 0; x < CELL; x++) {
-      pixelFn(ctx, cellX, cellY, x, y);
-    }
+    for (let x = 0; x < CELL; x++) pixelFn(x, y);
   }
 }
+
+// Paletas bem separadas em matiz: verde-vivo, marrom-neutro, cinza-azulado,
+// bege-claro, laranja-queimado, verde-escuro.
+const GRASS = [86, 156, 48];
+const DIRT = [124, 88, 58];
+const STONE = [138, 140, 148];
+const SAND = [226, 212, 160];
+const WOOD = [154, 101, 42];
+const LEAVES = [46, 110, 40];
 
 export function createAtlas() {
   const canvas = document.createElement('canvas');
@@ -55,44 +63,65 @@ export function createAtlas() {
   canvas.height = ROWS * CELL;
   const ctx = canvas.getContext('2d');
 
-  // Grama topo — verde com variação de tom
-  drawCell(ctx, Cells.GRASS_TOP, (c, cx, cy, x, y) => {
-    px(c, cx, cy, x, y, [95, 159, 53], 14, 11);
+  // Grama (topo) — tufos: manchas claras e escuras em blocos de 2px.
+  drawCell(ctx, Cells.GRASS_TOP, (x, y) => {
+    const tuft = hash2(x >> 1, y >> 1, 11);
+    const shade = tuft > 0.78 ? 26 : tuft < 0.22 ? -26 : (hash2(x, y, 12) - 0.5) * 16;
+    px(ctx, Cells.GRASS_TOP, x, y, GRASS, shade);
   });
 
-  // Grama lado — terra com franja verde irregular no alto
-  drawCell(ctx, Cells.GRASS_SIDE, (c, cx, cy, x, y) => {
-    const fringe = 2 + Math.floor(hash2(x, 0, 77) * 3); // 2..4 px de franja
-    if (y < fringe) px(c, cx, cy, x, y, [95, 159, 53], 14, 12);
-    else px(c, cx, cy, x, y, [134, 96, 67], 12, 13);
+  // Grama (lado) — faixa verde grossa no alto com pontas irregulares descendo
+  // pela terra; é o que impede a lateral da grama de virar "terra".
+  drawCell(ctx, Cells.GRASS_SIDE, (x, y) => {
+    const drip = 6 + Math.floor(hash2(x, 0, 21) * 4); // 6..9 px de verde (>= meio bloco)
+    if (y < drip) {
+      const shade = (hash2(x, y, 22) - 0.5) * 24;
+      px(ctx, Cells.GRASS_SIDE, x, y, GRASS, shade);
+    } else {
+      const pebble = hash2(x, y, 23) > 0.88 ? -30 : (hash2(x, y, 24) - 0.5) * 14;
+      px(ctx, Cells.GRASS_SIDE, x, y, DIRT, pebble);
+    }
   });
 
-  // Terra — marrom
-  drawCell(ctx, Cells.DIRT, (c, cx, cy, x, y) => {
-    px(c, cx, cy, x, y, [134, 96, 67], 14, 21);
+  // Terra — marrom neutro com pedriscos escuros bem visíveis.
+  drawCell(ctx, Cells.DIRT, (x, y) => {
+    const p = hash2(x, y, 31);
+    const shade = p > 0.84 ? -38 : p < 0.14 ? 24 : (hash2(x, y, 32) - 0.5) * 18;
+    px(ctx, Cells.DIRT, x, y, DIRT, shade);
   });
 
-  // Pedra — cinza com manchas
-  drawCell(ctx, Cells.STONE, (c, cx, cy, x, y) => {
-    const blotch = hash2(x >> 1, y >> 1, 31) > 0.8 ? -18 : 0;
-    px(c, cx, cy, x, y, [125 + blotch, 125 + blotch, 125 + blotch], 10, 32);
+  // Pedra — cinza azulado com rachaduras horizontais escuras (padrão de junta).
+  drawCell(ctx, Cells.STONE, (x, y) => {
+    const seam = (y === 5 && x > 1 && x < 12) || (y === 11 && (x < 6 || x > 9));
+    const fleck = hash2(x >> 1, y >> 1, 41);
+    const shade = seam ? -42 : fleck > 0.85 ? 22 : (hash2(x, y, 42) - 0.5) * 12;
+    px(ctx, Cells.STONE, x, y, STONE, shade);
   });
 
-  // Areia — bege claro
-  drawCell(ctx, Cells.SAND, (c, cx, cy, x, y) => {
-    px(c, cx, cy, x, y, [219, 207, 163], 10, 41);
+  // Areia — bege claro, granulado fino e uniforme (sem manchas grandes).
+  drawCell(ctx, Cells.SAND, (x, y) => {
+    const grain = hash2(x, y, 51);
+    const shade = grain > 0.82 ? -18 : grain < 0.18 ? 14 : 0;
+    px(ctx, Cells.SAND, x, y, SAND, shade);
   });
 
-  // Madeira (casca) — estrias verticais
-  drawCell(ctx, Cells.WOOD, (c, cx, cy, x, y) => {
-    const stripe = hash2(x, 0, 51) > 0.6 ? -22 : 0;
-    px(c, cx, cy, x, y, [103 + stripe, 82 + stripe, 49 + stripe], 8, 52);
+  // Madeira — casca laranja-queimada com estrias verticais de forte contraste
+  // e dois nós escuros; nunca confundível com terra.
+  drawCell(ctx, Cells.WOOD, (x, y) => {
+    const stripe = hash2(x, 0, 61);
+    let shade = stripe > 0.72 ? -40 : stripe < 0.2 ? 20 : (hash2(x, y, 62) - 0.5) * 12;
+    const knot = (x - 4) * (x - 4) + (y - 5) * (y - 5) < 4 ||
+                 (x - 11) * (x - 11) + (y - 12) * (y - 12) < 3;
+    if (knot) shade = -52;
+    px(ctx, Cells.WOOD, x, y, WOOD, shade);
   });
 
-  // Folhas — verde escuro com "furos" mais escuros
-  drawCell(ctx, Cells.LEAVES, (c, cx, cy, x, y) => {
-    const hole = hash2(x, y, 61) > 0.85 ? -30 : 0;
-    px(c, cx, cy, x, y, [58 + hole, 121 + hole, 44 + hole], 16, 62);
+  // Folhas — verde escuro em cachos, com vãos quase pretos entre eles.
+  drawCell(ctx, Cells.LEAVES, (x, y) => {
+    const clump = hash2(x >> 1, y >> 1, 71);
+    const gap = hash2(x, y, 72);
+    const shade = gap > 0.9 ? -46 : clump > 0.7 ? 30 : clump < 0.3 ? -22 : 0;
+    px(ctx, Cells.LEAVES, x, y, LEAVES, shade);
   });
 
   const texture = new THREE.CanvasTexture(canvas);
@@ -136,5 +165,20 @@ export function createAtlas() {
     };
   }
 
-  return { texture, uvRect };
+  // Miniatura da face mais reconhecível do bloco (topo para grama, lado para o
+  // resto), como data URL — o hotbar usa isto para mostrar a textura de verdade.
+  function swatch(blockId) {
+    const cell = cellFor(blockId, blockId === Blocks.GRASS ? 0 : 2);
+    const out = document.createElement('canvas');
+    out.width = CELL;
+    out.height = CELL;
+    out.getContext('2d').drawImage(
+      canvas,
+      (cell % COLS) * CELL, Math.floor(cell / COLS) * CELL, CELL, CELL,
+      0, 0, CELL, CELL,
+    );
+    return out.toDataURL();
+  }
+
+  return { texture, uvRect, swatch };
 }

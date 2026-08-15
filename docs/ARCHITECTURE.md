@@ -58,11 +58,14 @@ export class World {
 
 ### atlas.js
 ```js
-export function createAtlas() // -> { texture, uvRect }
+export function createAtlas() // -> { texture, uvRect, swatch }
 // texture: THREE.CanvasTexture com NearestFilter (pixel art), gerada proceduralmente num canvas
 // uvRect(blockId, face) -> { u0, v0, u1, v1 }   face: 0=topo, 1=fundo, 2=lado
+// swatch(blockId) -> data URL 16×16 da face mais reconhecível (hotbar)
 ```
 Texturas 16×16 desenhadas por código (fillRect + ruído de tom): grama topo verde, grama lado (terra com franja verde), terra, pedra, areia, madeira (casca), folhas. GRASS: topo/lado/fundo distintos; demais podem repetir a mesma célula.
+
+**Distinguibilidade é requisito, não estética.** Terra, madeira e a lateral da grama são todas marrons; se só a matiz as separar, o jogador jura que o hotbar não funciona. Cada material tem matiz própria **e** padrão próprio (pedrisco, estria vertical com nós, rachadura, granulado, cacho). O teste é a distância RGB mínima entre pares de células, que deve ficar bem acima de ~30.
 
 ### mesher.js
 ```js
