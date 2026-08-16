@@ -173,3 +173,17 @@ openStorage → loadAllDiffs → new World → createScene → createAtlas → C
 → loop rAF: dt clampado a 0.05s; player.update, interaction.update, bots.update,
   chunkRenderer.update, camera segue eyePos/yaw/pitch, render
 ```
+
+## tests/ — regressão da interação
+
+```sh
+node tests/run.mjs      # sem dependências, sem package.json; sai != 0 se algo falhar
+```
+
+`run.mjs` registra um hook que resolve o especificador nu `three` para `lib/three.module.js` — o mesmo que o importmap do `index.html` faz no browser. Por isso os testes carregam os **arquivos reais** (`interaction.js`, `raycast.js`, `player.js`, `physics.js`, `world.js`), em vez de uma cópia da lógica. `harness.mjs` só monta cenário: mundo plano, `Player` e `Interaction` de verdade ligados a um input falso, e uma mira que varre o pitch como o jogador varre olhando o destaque.
+
+**Nada de constante duplicada no teste.** Altura do olho, alcance e força do pulo são descobertos rodando o código; um teste que reimplementa a regra passa a validar a cópia e deixa o jogo quebrar em paz.
+
+Cobertura, em ordem do que dói mais perder: coluna à frente passa de 2 blocos (o bug), sobe de qualquer distância (0 a 2 blocos de folga), sobe acima da cabeça sem virar bloco solto ao lado, mirar a metade de baixo continua colocando ao lado, topo ocupado não sobrescreve, clique sem lugar é recusado, nenhum ângulo coloca bloco dentro do jogador (varredura de yaw × pitch), faces de cima e de baixo nunca sobem, pilar por pulo continua subindo, quebrar continua quebrando o bloco mirado, e o contrato do raycast (`t` cai no plano da face, `prev` = `block + normal` e nunca é sólida).
+
+Verificado que a suíte acusa: desligando `_isSideFace`, caem os 3 testes de empilhar e mais nenhum.
