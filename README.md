@@ -30,7 +30,11 @@ python3 -m http.server 8080
 | Mouse esq. | quebrar bloco |
 | Mouse dir. | colocar bloco |
 | 1–6 | escolher bloco do hotbar |
+| V | alternar 1ª pessoa → 3ª pessoa → 3ª de frente |
 | ESC | soltar o mouse |
+
+Em 3ª pessoa você se vê: o boneco do jogador é o Heitor — moletom preto de
+zíper, bermuda clara, tênis escuros e as luvas de boxe vermelhas.
 
 ## O que acontece sozinho no mundo
 

@@ -62,6 +62,12 @@ function fromHex(hex) {
   return [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
 }
 
+// Detalhe visível sobre qualquer cor de roupa. Escurecer funciona em tecido
+// claro, mas num moletom preto um detalhe mais escuro vira buraco — o bolso
+// canguru sumia e o peito ficava com uma mancha. Em tecido escuro, clareia.
+const luma = ([r, g, b]) => 0.299 * r + 0.587 * g + 0.114 * b;
+const detail = (c, d = 26) => shade(c, luma(c) < 90 ? d + 8 : -d);
+
 // Tons de pele e cabelo pensados para serem distinguíveis entre si de longe, e
 // não para retratar ninguém em particular.
 const SKINS = [
@@ -72,6 +78,27 @@ const HAIRS = [
   [40, 30, 26], [78, 48, 30], [120, 74, 38],
   [186, 148, 74], [96, 96, 104], [150, 60, 48],
 ];
+
+// O boneco do jogador. Ao contrário dos bots, este não é sorteado: é sempre o
+// mesmo, tirado de uma foto do Heitor — cabelo escuro curto, moletom preto de
+// zíper, bermuda clara, tênis escuros e as luvas de boxe vermelhas. O que um
+// boneco de voxel consegue mostrar é roupa e silhueta, e é nisso que ele é
+// reconhecível; rosto, neste tamanho, são quatro pixels.
+export const HEITOR = {
+  skin: [214, 168, 132],
+  hair: [34, 27, 25],
+  shirt: [28, 28, 31],      // moletom preto
+  pants: [232, 223, 198],   // bermuda creme
+  shoe: [46, 44, 46],
+  sock: [200, 46, 52],
+  glove: [198, 38, 40],     // luva de boxe vermelha
+  eye: [62, 46, 38],
+  gaze: 0,
+  hoodie: true,
+  shorts: true,
+  longSleeve: true,
+  nameTag: false,           // é você: nome flutuando na cara atrapalha
+};
 
 // ---------------------------------------------------------------------------
 // Pintura em coordenadas de U (meio-U também vale)
@@ -173,6 +200,22 @@ function torsoFaces(look, rnd) {
   const dressShirt = (s, w, isFront) => {
     const { rect, grain } = s;
     grain(0, 0, w, 9.5, shirt, 16, rnd);
+    // Moletom de zíper: o zíper desce inteiro pela frente, com o bolso canguru
+    // logo abaixo. É o que separa um moletom de uma camiseta escura.
+    if (look.hoodie) {
+      grain(0, 9.5, w, 2.5, shirt, 14, rnd);              // o moletom passa do quadril
+      rect(0, 0, w, 1.2, detail(shirt, 18));              // barra do capuz no peito
+      if (isFront) {
+        rect(w / 2 - 0.25, 0, 0.5, 9.5, shade(shirt, 46));   // zíper
+        for (let y = 0.5; y < 9.5; y += 0.5) rect(w / 2 - 0.25, y, 0.5, 0.25, shade(shirt, 18));
+        rect(w / 2 - 0.4, 1.2, 0.8, 0.6, [214, 214, 218]);   // cursor do zíper
+        rect(1, 5.5, w - 2, 2, detail(shirt, 20));           // bolso canguru
+        rect(1, 5.5, w - 2, 0.35, detail(shirt, 30));        // boca do bolso
+        rect(w - 2.5, 7.6, 1.2, 0.4, [226, 226, 230]);       // estampa miúda no peito
+      }
+      rect(0, 11.6, w, 0.4, detail(shirt, 14));           // punho da barra
+      return;
+    }
     if (look.pattern === 0) {
       for (let y = 1; y < 9; y += 2) grain(0, y, w, 1, trim, 10, rnd);        // listras
     } else if (look.pattern === 1) {
@@ -213,7 +256,15 @@ function torsoFaces(look, rnd) {
 
 // Braço 4×12×4: manga, pele, mão. Perna 4×12×4: calça e sapato.
 function armFaces(look, rnd) {
-  const { skin, shirt } = look;
+  const { skin, shirt, glove } = look;
+  // Luva de boxe: a mão some dentro dela e o punho ganha um enfaixado claro. Não
+  // dá para engordar a caixa (a geometria é a mesma dos bots), então o que
+  // marca a luva é ela ocupar quase um terço do braço e ter o brilho no dorso.
+  const handLen = glove ? 3.5 : 1.5;
+  // Manga comprida vai até onde a mão começa: no moletom fechado não sobra
+  // antebraço à mostra, e uma faixa de pele no meio do braço preto denunciava
+  // logo que a manga era curta.
+  const sleeveLen = look.longSleeve ? 12 - handLen : 5;
   return [RIGHT, LEFT, TOP, BOTTOM, FRONT, BACK].map((face) => {
     if (face === TOP) {
       const s = surface(4, 4);
@@ -222,20 +273,30 @@ function armFaces(look, rnd) {
     }
     if (face === BOTTOM) {
       const s = surface(4, 4);
-      s.grain(0, 0, 4, 4, shade(skin, -20), 10, rnd);   // palma da mão
+      s.grain(0, 0, 4, 4, glove ? shade(glove, -26) : shade(skin, -20), 10, rnd);
       return material(s.canvas);
     }
     const s = surface(4, 12);
-    s.grain(0, 0, 4, 5, shirt, 16, rnd);                // manga
-    s.grain(0, 5, 4, 5.5, skin, 12, rnd);               // antebraço
-    s.grain(0, 10.5, 4, 1.5, shade(skin, -18), 10, rnd); // mão
-    s.rect(0, 4.75, 4, 0.35, shade(shirt, -40));        // barra da manga
+    s.grain(0, 0, 4, sleeveLen, shirt, 16, rnd);                    // manga
+    s.grain(0, sleeveLen, 4, 12 - sleeveLen - handLen, skin, 12, rnd); // antebraço
+    s.rect(0, sleeveLen - 0.25, 4, 0.35, detail(shirt, 22));        // barra da manga
+    if (glove) {
+      s.grain(0, 12 - handLen, 4, handLen, glove, 14, rnd);
+      s.rect(0, 12 - handLen, 4, 0.5, [236, 232, 226]);      // punho enfaixado
+      s.rect(0.5, 12 - handLen + 1, 3, 0.5, shade(glove, 34)); // brilho do couro
+      s.rect(0, 11.5, 4, 0.5, shade(glove, -34));            // costura da ponta
+    } else {
+      s.grain(0, 10.5, 4, 1.5, shade(skin, -18), 10, rnd);   // mão
+    }
     return material(s.canvas);
   });
 }
 
 function legFaces(look, rnd) {
-  const { pants, shoe } = look;
+  const { pants, shoe, skin, shorts, sock } = look;
+  // Bermuda: a calça para na coxa e o resto da perna é pele. Sem isto o boneco
+  // de bermuda fica igual ao de calça, que é a diferença mais visível de longe.
+  const pantsLen = shorts ? 4 : 9.5;
   return [RIGHT, LEFT, TOP, BOTTOM, FRONT, BACK].map((face) => {
     if (face === TOP) {
       const s = surface(4, 4);
@@ -248,8 +309,14 @@ function legFaces(look, rnd) {
       return material(s.canvas);
     }
     const s = surface(4, 12);
-    s.grain(0, 0, 4, 9.5, pants, 14, rnd);
-    s.rect(0, 4.5, 4, 0.35, shade(pants, -34));         // vinco do joelho
+    s.grain(0, 0, 4, pantsLen, pants, 14, rnd);
+    if (shorts) {
+      s.grain(0, pantsLen, 4, 9.5 - pantsLen, skin, 12, rnd);
+      s.rect(0, pantsLen - 0.35, 4, 0.35, shade(pants, -30));   // barra da bermuda
+      if (sock) s.grain(0, 8.75, 4, 0.75, sock, 10, rnd);       // meia aparecendo
+    } else {
+      s.rect(0, 4.5, 4, 0.35, shade(pants, -34));               // vinco do joelho
+    }
     s.grain(0, 9.5, 4, 2.5, shoe, 10, rnd);             // sapato
     s.rect(0, 9.5, 4, 0.35, shade(shoe, 26));           // cano do sapato
     return material(s.canvas);
@@ -301,10 +368,14 @@ function nameSprite(name) {
  * ela); o resto — pele, cabelo, calça, sapato, padrão da roupa — sai do nome,
  * de forma determinística.
  *
- * Devolve { group, animate(dt, speed, onGround) }. O group tem origem nos pés,
- * como a `pos` da física.
+ * `overrides` fixa peças desse visual, para um boneco que não é sorteado: é como
+ * o jogador ganha sempre a mesma roupa em vez de uma tirada do hash do nome.
+ * Campos extras aceitos: `hoodie`, `shorts`, `glove`, `sock`, `nameTag`.
+ *
+ * Devolve { group, animate(dt, speed, onGround, pitch) }. O group tem origem nos
+ * pés, como a `pos` da física.
  */
-export function createAvatar(name, color) {
+export function createAvatar(name, color, overrides = {}) {
   const rnd = rngFrom(hashName(name));
   const shirt = fromHex(color);
   const look = {
@@ -316,6 +387,13 @@ export function createAvatar(name, color) {
     eye: rnd() < 0.5 ? [58, 48, 42] : [46, 74, 96],
     gaze: (Math.floor(rnd() * 3) - 1) * 0.4,   // olhar levemente para um lado
     pattern: Math.floor(rnd() * 3),
+    hoodie: false,
+    shorts: false,
+    longSleeve: false,
+    glove: null,
+    sock: null,
+    nameTag: true,
+    ...overrides,
   };
 
   const group = new THREE.Group();
@@ -331,7 +409,22 @@ export function createAvatar(name, color) {
   const legL = pivotAt(-2, 12, 0, box(4, 12, 4, legMats, true));
   const legR = pivotAt(2, 12, 0, box(4, 12, 4, legMats, true));
 
-  group.add(torso, head, armL, armR, legL, legR, nameSprite(name));
+  group.add(torso, head, armL, armR, legL, legR);
+  if (look.nameTag) group.add(nameSprite(name));
+
+  // Capuz caído nas costas: uma caixa rasa atrás do pescoço. Preso ao tronco e
+  // não à cabeça — capuz que gira junto com o rosto vira chapéu.
+  if (look.hoodie) {
+    const hoodMats = [RIGHT, LEFT, TOP, BOTTOM, FRONT, BACK].map(() => {
+      const s = surface(8, 4);
+      s.grain(0, 0, 8, 4, shade(look.shirt, -16), 14, rnd);
+      s.rect(0, 0, 8, 0.5, shade(look.shirt, 22));
+      return material(s.canvas);
+    });
+    const hood = box(8, 5, 3, hoodMats, false);
+    hood.position.set(0, 25 * U, -3 * U);
+    group.add(hood);
+  }
 
   let phase = rnd() * Math.PI * 2;  // bots não marcham em sincronia
   let swing = 0;
@@ -343,8 +436,10 @@ export function createAvatar(name, color) {
      * @param {number} dt      segundos desde o último frame
      * @param {number} speed   velocidade horizontal em blocos/s
      * @param {boolean} onGround
+     * @param {number} [pitch] mira em radianos; a cabeça acompanha em vez de
+     *                         ficar olhando em volta sozinha (usado pelo jogador)
      */
-    animate(dt, speed, onGround) {
+    animate(dt, speed, onGround, pitch) {
       clock += dt;
       // A passada acompanha a velocidade; parado, o balanço morre em vez de
       // congelar no meio do passo.
@@ -370,8 +465,16 @@ export function createAvatar(name, color) {
 
       // Parado, o boneco respira e olha em volta — sem isto ele vira estátua.
       const idle = 1 - Math.min(1, swing / 0.3);
-      head.rotation.y = Math.sin(clock * 0.7) * 0.28 * idle;
-      head.rotation.x = Math.sin(clock * 0.5 + 1.2) * 0.10 * idle;
+      if (typeof pitch === 'number') {
+        // Quem tem dono não olha para os lados sozinho: a cabeça segue a mira.
+        // O sinal é invertido porque o rosto é a face +Z, e girar +X a empurra
+        // para baixo.
+        head.rotation.y = 0;
+        head.rotation.x = -pitch * 0.7;
+      } else {
+        head.rotation.y = Math.sin(clock * 0.7) * 0.28 * idle;
+        head.rotation.x = Math.sin(clock * 0.5 + 1.2) * 0.10 * idle;
+      }
       torso.position.y = (18 + Math.sin(clock * 1.6) * 0.10 * idle) * U;
     },
   };

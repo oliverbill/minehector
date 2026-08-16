@@ -12,9 +12,9 @@
   </style>
 </head>
 <body>
-  <canvas id="out" width="1100" height="620"></canvas>
+  <canvas id="out" width="1460" height="620"></canvas>
   <script type="module">
-    import { createAvatar } from '../js/bots/avatar.js';
+    import { createAvatar, HEITOR } from '../js/bots/avatar.js';
 
     const S = 260;                       // pixels por bloco
     const ctx = document.getElementById('out').getContext('2d');
@@ -42,10 +42,16 @@
       ctx.fillText(label, cx, baseY + 30);
     }
 
-    const roster = [['Ana', 0xcc3333], ['Beto', 0x3366cc], ['Caio', 0xe6cc33]];
+    // O jogador entra junto: é o mesmo montador de boneco, só que com o visual
+    // fixo em vez do sorteado pelo nome — e é aqui que se confere a roupa dele
+    // sem precisar entrar no jogo e girar a câmera.
+    const roster = [
+      ['Heitor', 0x1c1c1f, HEITOR],
+      ['Ana', 0xcc3333], ['Beto', 0x3366cc], ['Caio', 0xe6cc33],
+    ];
     let x = 150;
-    for (const [name, color] of roster) {
-      const a = createAvatar(name, color);
+    for (const [name, color, look] of roster) {
+      const a = createAvatar(name, color, look);
       a.animate(1 / 60, 0, true);
       draw(a, x, 540, 4, `${name} — frente`);
       draw(a, x + 190, 540, 5, 'costas');

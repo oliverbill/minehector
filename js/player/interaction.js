@@ -33,22 +33,22 @@ export class Interaction {
 
     input.onMouseButton((button) => {
       if (!this._target) {
-        this._say('Nada ao alcance — chegue mais perto');
+        this.say('Nada ao alcance — chegue mais perto');
         return;
       }
       if (button === 0) {
         const b = this._target.block;
         if (!this.world.setBlock(b.x, b.y, b.z, Blocks.AIR, Owner.PLAYER)) {
-          this._say('Obra dos bots — só quem construiu mexe');
+          this.say('Obra dos bots — só quem construiu mexe');
         }
       } else if (button === 2) {
         const cell = this._placementCell(this._target);
         if (!cell) {
-          this._say('Aí não dá — o bloco ficaria dentro de você');
+          this.say('Aí não dá — o bloco ficaria dentro de você');
           return;
         }
         if (!this.world.setBlock(cell.x, cell.y, cell.z, this.selectedBlock, Owner.PLAYER)) {
-          this._say('Obra dos bots — só quem construiu mexe');
+          this.say('Obra dos bots — só quem construiu mexe');
         }
       }
     });
@@ -65,7 +65,7 @@ export class Interaction {
 
   // Recado curto no centro da tela. Sem isto, uma recusa é indistinguível de
   // um jogo quebrado: o clique não faz nada e nada explica por quê.
-  _say(msg) {
+  say(msg) {
     if (!this._toast) return;
     this._toast.textContent = msg;
     this._toast.classList.add('show');

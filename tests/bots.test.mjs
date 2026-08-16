@@ -34,7 +34,12 @@ test('a obra sai do chão: os blocos vão parar no mundo', () => {
       for (let y = s.origin.y; y < s.origin.y + 6; y++) if (world.isSolid(x, y, z)) solidos++;
     }
   }
-  assert(solidos > 40, `só ${solidos} blocos assentados no sítio da ${s.kind}`);
+  // A régua é a área do sítio, não um número fixo: qual construção sai é
+  // sorteado, e um poço — que é quase todo buraco — nunca alcançaria o mesmo
+  // total de uma casa. Pelo menos um bloco por coluna, em média, já prova que a
+  // obra saiu do papel; com número fixo o teste falhava quando calhava um poço.
+  const area = (s.bounds.x1 - s.bounds.x0 + 1) * (s.bounds.z1 - s.bounds.z0 + 1);
+  assert(solidos > area, `só ${solidos} blocos assentados no sítio da ${s.kind} (área ${area})`);
 });
 
 test('nenhum bot fica preso dentro do que construiu', () => {

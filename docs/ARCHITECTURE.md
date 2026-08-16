@@ -34,25 +34,31 @@ export function generateChunk(seed, cx, cz) // -> Uint8Array do chunk
 ### storage.js
 ```js
 export async function openStorage()          // abre o IndexedDB (db "cubocraft", store "diffs")
-export async function loadAllDiffs()         // -> Map<chunkKey, Map<blockIdx, blockId>>
-export function queueDiff(cx, cz, blockIdx, blockId)  // acumula em memória
+export async function loadAllDiffs()         // -> { blocks, owners }, cada um Map<chunkKey, Map<blockIdx, valor>>
+export function queueDiff(cx, cz, blockIdx, blockId, owner)  // acumula em memória
 export async function flushDiffs()           // grava o acumulado; também auto-flush a cada 3s e em visibilitychange/pagehide
 ```
-Registro no IndexedDB: uma entrada por chunk, key `chunkKey`, valor serializável (objeto/array simples). Última escrita vence dentro do mesmo bloco.
+Registro no IndexedDB: uma entrada por chunk, key `chunkKey`, valor array de `[blockIdx, blockId, owner]`. O terceiro campo é omitido quando a célula não tem dono, e um registro antigo de 2 campos carrega como `Owner.NONE` — save gravado antes da posse continua válido. Última escrita vence dentro do mesmo bloco.
 
 ### world.js
 ```js
 export class World {
-  constructor(seed, diffs)      // diffs no formato de loadAllDiffs()
+  constructor(seed, diffs, owners)  // no formato de loadAllDiffs()
   getChunk(cx, cz)              // Uint8Array; gera sob demanda (worldgen) e aplica diffs; cacheia
   getBlock(wx, wy, wz)          // id; fora de Y -> AIR; chunk inexistente -> gera
-  setBlock(wx, wy, wz, id)      // escreve no chunk, chama queueDiff, marca dirty
+  ownerOf(wx, wy, wz)           // Owner.NONE | PLAYER | BOT
+  canEdit(wx, wy, wz, by)       // a célula é livre ou já é de `by`?
+  setBlock(wx, wy, wz, id, by)  // escreve, marca `by` como dono, queueDiff, dirty; -> boolean
   isSolid(wx, wy, wz)           // id !== AIR (todos os blocos v1 são sólidos)
   surfaceHeight(wx, wz)         // y do primeiro bloco sólido de cima p/ baixo, -1 se nenhum
   dirty                         // Set<chunkKey> de chunks a re-meshear; consumidor faz clear
 }
 ```
 `setBlock` num bloco de borda também marca dirty o(s) chunk(s) vizinho(s) adjacentes.
+
+**Posse (`Owner` em constants.js).** Quem escreve numa célula passa a ser dono dela, AIR inclusive; `setBlock` recusa — devolvendo `false`, sem efeito nenhum — a escrita de quem não é o dono. Terreno como saiu do worldgen é `NONE` e aceita os dois. É o que impede o jogador de derrubar (ou de tapar a porta d)a casa de um bot, e a obra de um bot de assentar por cima do que o jogador fez.
+
+Como `setBlock` é o único ponto por onde o mundo muda, a regra vale para qualquer caminho de edição, presente ou futuro. Os dois chamadores reais passam quem são: `Interaction` escreve como `Owner.PLAYER`, `BuildJob` como `Owner.BOT`. Bloco recusado no meio de uma obra é descartado (a casa sai remendada) em vez de reenfileirado — o jogador não vai sair de lá, e a obra tem de acabar; `Village.planNear` ainda recusa antes o sítio cuja planta encoste em célula do jogador.
 
 ## js/render/ (frente B)
 
@@ -150,7 +156,21 @@ export class Interaction {
 Se o topo estiver ocupado, cai de volta em `prev` — e se `prev` for do jogador, recusa com toast. Mirar na metade de baixo continua colocando ao lado: é assim que se estende parede na horizontal, inclusive acima da cabeça.
 
 Sem isto, uma coluna à frente travava em exatamente 2 blocos: passados 2, o topo fica acima da linha do olho (1,62), a face de cima some da vista e só resta a lateral — cuja vizinha ou é o jogador (colado) ou é um bloco solto ao lado (de longe). O critério é onde se mira, não onde se está: a 2 blocos de distância a coluna sobe igual, sem colar nela. Faces de cima e de baixo nunca sobem — seria colocar do outro lado do bloco, fora de vista. O teto é o alcance de 6 medido do olho; daí pula-se em cima da coluna e continua.
-Registra em `input.onMouseButton`: esquerdo quebra (`setBlock AIR`), direito coloca `selectedBlock` na célula que `_placementCell` escolher. Registra em `input.onKeyPress`: Digit1..Digit6 selecionam GRASS..LEAVES e atualizam a classe `.active` nos elementos `#hotbar .slot` (data-block já no HTML).
+Registra em `input.onMouseButton`: esquerdo quebra (`setBlock AIR`), direito coloca `selectedBlock` na célula que `_placementCell` escolher — as duas escritas como `Owner.PLAYER`, e a recusa por posse vira toast como qualquer outra. Registra em `input.onKeyPress`: Digit1..Digit6 selecionam GRASS..LEAVES e atualizam a classe `.active` nos elementos `#hotbar .slot` (data-block já no HTML). `say(msg)` é público: a View usa o mesmo toast para anunciar a câmera.
+
+### view.js
+```js
+export class View {
+  constructor(world, player, scene, input, onChange)
+  cycle()                  // 1ª pessoa -> 3ª de trás -> 3ª de frente -> 1ª
+  update(dt, camera)       // posiciona boneco e câmera; chamado todo frame, depois da física
+  mode                     // FIRST | THIRD_BACK | THIRD_FRONT
+  avatar                   // o boneco do jogador (createAvatar com o visual HEITOR)
+}
+```
+Tecla **V** alterna (não F5: no navegador F5 recarrega a página). Em 1ª pessoa a câmera fica em `eyePos` e o boneco é `visible = false`. Em 3ª, a câmera anda até 4,2 blocos no contrário do olhar (ou no sentido dele, na de frente) — e o recuo é medido com o mesmo `raycastVoxel` da mira, parando 0,4 antes do primeiro bloco sólido. Sem isso a câmera entra na parede de trás e o jogador passa a ver o mundo por dentro do terreno sem entender por quê. Na câmera de frente, `rotation` vira meia volta e o pitch inverte, para o boneco ficar de cara para quem joga.
+
+O boneco fica na `pos` do jogador (origem nos pés, como a física) com `rotation.y = yaw + π`: o rosto é a face +Z e o jogador com yaw 0 olha para -Z.
 
 ## js/bots/ (frente D)
 
@@ -165,13 +185,16 @@ Bot: mesma física do jogador (`moveEntity` de `js/player/physics.js`), width 0.
 
 ### avatar.js
 ```js
-export function createAvatar(name, color) // -> { group, animate(dt, speed, onGround) }
+export function createAvatar(name, color, overrides) // -> { group, animate(dt, speed, onGround, pitch) }
+export const HEITOR                                  // o visual fixo do jogador
 ```
 Boneco humanoide segmentado: cabeça 8×8×8, tronco 8×12×4, braços e pernas 4×12×4, em unidades `U = 1.8/32` — 32 U de altura para casar com a AABB do bot. Braços e pernas penduram de um `Group` no ombro/quadril, então giram como articulação. A skin é pixel art desenhada por código (canvas 2D, `NearestFilter`), uma textura por face, com o rosto na face **+Z** — que é a frente, porque o mesh é girado por `atan2(vel.x, vel.z)`.
 
 **Duas caixas coloridas não têm frente.** De lado ou de costas o bot antigo era o mesmo borrão, e não dava para saber se vinha, ia ou estava parado. Cabeça, membros e rosto resolvem isso à distância em que a IA decide seguir (10 blocos).
 
-Pele, cabelo, calça, sapato, olhar e padrão da roupa saem de um hash do **nome** — o mesmo nome dá sempre o mesmo boneco, entre sessões e máquinas, como o resto do projeto evita `Math.random`. A camisa vem do `color` do roster. `animate` faz a passada acompanhar a velocidade real (sem patinar), morrer quando o bot para, dar respiração e olhada no idle, e levantar os braços no ar. A fase inicial é aleatória por bot para não marcharem em sincronia.
+Pele, cabelo, calça, sapato, olhar e padrão da roupa saem de um hash do **nome** — o mesmo nome dá sempre o mesmo boneco, entre sessões e máquinas, como o resto do projeto evita `Math.random`. A camisa vem do `color` do roster. `animate` faz a passada acompanhar a velocidade real (sem patinar), morrer quando o bot para, dar respiração e olhada no idle, e levantar os braços no ar. A fase inicial é aleatória por bot para não marcharem em sincronia. Com `pitch` (o jogador), a cabeça segue a mira em vez de vagar sozinha.
+
+`overrides` fixa peças do visual, para um boneco que não é sorteado. Campos além das cores: `hoodie` (zíper inteiro na frente, bolso canguru e uma caixa de capuz caída atrás do pescoço — presa ao **tronco**, senão vira chapéu que gira com o rosto), `shorts` (a calça para na coxa e o resto da perna é pele), `glove` (a mão vira luva de boxe ocupando um terço do braço, com punho enfaixado), `sock` e `nameTag`. `HEITOR` é o visual do jogador: cabelo escuro curto, moletom preto, bermuda creme, tênis escuros, luvas vermelhas e sem nome flutuando — num boneco deste tamanho o que é reconhecível é roupa e silhueta, não rosto.
 
 Para conferir a skin sem GPU: `dev/preview-avatar.html` desenha as próprias texturas do avatar numa vista ortográfica de frente e de costas.
 ### village.js e world/structures.js — as construções
@@ -195,7 +218,7 @@ FSM: `idle` (2–4s) → `build` (procura sítio; sem terreno, volta a vaguear) 
 openStorage → loadAllDiffs → new World → createScene → createAtlas → ChunkRenderer
 → spawn em (8.5, surfaceHeight+1, 8.5) → Player, Input, Interaction, BotManager(3)
 → loop rAF: dt clampado a 0.05s; player.update, interaction.update, bots.update,
-  chunkRenderer.update, camera segue eyePos/yaw/pitch, render
+  chunkRenderer.update, view.update (boneco + câmera), render
 ```
 
 ## tests/ — regressão da interação

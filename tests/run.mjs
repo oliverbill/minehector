@@ -22,5 +22,6 @@ await import('./avatar.test.mjs');
 await import('./structures.test.mjs');
 await import('./bots.test.mjs');
 await import('./ownership.test.mjs');
+await import('./view.test.mjs');
 
 process.exit((await runAll()) === 0 ? 0 : 1);

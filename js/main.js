@@ -6,6 +6,7 @@ import { createAtlas } from './render/atlas.js';
 import { Input } from './player/input.js';
 import { Player } from './player/player.js';
 import { Interaction } from './player/interaction.js';
+import { View, MODE_NAMES } from './player/view.js';
 import { BotManager } from './bots/botManager.js';
 
 async function boot() {
@@ -28,6 +29,7 @@ async function boot() {
 
   const input = new Input(canvas);
   const interaction = new Interaction(world, player, scene, input);
+  const view = new View(world, player, scene, input, (mode) => interaction.say(MODE_NAMES[mode]));
   const bots = new BotManager(scene, world, 3);
 
   const overlay = document.getElementById('overlay');
@@ -40,7 +42,7 @@ async function boot() {
   // lock não é concedido a cliques automatizados, então sem isto não há como
   // testar quebrar/colocar bloco num navegador controlado.
   if (location.hash === '#debug') {
-    window.__game = { world, player, input, interaction, chunkRenderer, bots, camera, scene };
+    window.__game = { world, player, input, interaction, view, chunkRenderer, bots, camera, scene };
   }
 
   const fpsEl = document.getElementById('fps');
@@ -58,11 +60,7 @@ async function boot() {
     }
     bots.update(dt, player.pos);
     chunkRenderer.update(player.pos);
-
-    const eye = player.eyePos;
-    camera.position.set(eye.x, eye.y, eye.z);
-    camera.rotation.order = 'YXZ';
-    camera.rotation.set(player.pitch, player.yaw, 0);
+    view.update(dt, camera);
 
     renderer.render(scene, camera);
 
