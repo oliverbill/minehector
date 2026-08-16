@@ -6,7 +6,7 @@
 // jogador entende que aquilo ali é obra de alguém.
 
 import { planStructure, STRUCTURE_KINDS, footprint } from '../world/structures.js';
-import { Blocks } from '../constants.js';
+import { Blocks, Owner } from '../constants.js';
 
 export const MAX_STRUCTURES = 6;    // teto por sessão, para a aldeia não virar cidade
 export const SITE_MIN_DIST = 11;    // blocos entre construções
@@ -95,7 +95,10 @@ export class BuildJob {
         this.queue.push(item);   // depois, quando quem está ali tiver saído
         continue;
       }
-      this.world.setBlock(wx, wy, wz, id);
+      // Célula do jogador é intocável, e ao contrário do caso acima não adianta
+      // esperar: ele não vai sair dali. O bloco é descartado e a obra segue com
+      // um furo — melhor uma casa remendada do que uma obra que nunca acaba.
+      this.world.setBlock(wx, wy, wz, id, Owner.BOT);
     }
     return this.done;
   }
@@ -121,6 +124,16 @@ export class Village {
       if (d < bestD) { bestD = d; best = s.door; }
     }
     return best;
+  }
+
+  /** Nenhuma célula da planta, posta em `origin`, é do jogador? */
+  _clearOfPlayer(plan, origin) {
+    for (const [x, y, z] of plan.blocks) {
+      if (this.world.ownerOf(origin.x + x, origin.y + y, origin.z + z) === Owner.PLAYER) {
+        return false;
+      }
+    }
+    return true;
   }
 
   _freeOf(bounds) {
@@ -172,6 +185,11 @@ export class Village {
       if (!ok || hi - lo > MAX_SLOPE) continue;
 
       const origin = { x: ox, y: hi + 1, z: oz };
+      // Terreno onde o jogador mexeu não vira canteiro de obra. O descarte de
+      // bloco no step() já protege o que é dele, mas uma casa erguida em cima da
+      // construção do jogador sairia esburacada e por cima do trabalho alheio —
+      // o lugar certo de recusar é aqui, antes de assentar o primeiro bloco.
+      if (!this._clearOfPlayer(plan, origin)) continue;
       // A porta olha para -Z, então "dentro" é alguns blocos em +Z. O bot visita
       // parando na soleira e depois entrando: parar na porta é ficar de fora.
       const door = plan.door

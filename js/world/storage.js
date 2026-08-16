@@ -1,5 +1,10 @@
 // Persistência dos diffs de blocos em IndexedDB (db "cubocraft", store "diffs").
-// Uma entrada por chunk: key = chunkKey, valor = array de pares [blockIdx, blockId].
+// Uma entrada por chunk: key = chunkKey, valor = array de [blockIdx, blockId, owner].
+//
+// O terceiro campo é opcional e ausente significa Owner.NONE — assim um save
+// gravado antes de existir posse continua carregando, com o mundo todo sem dono.
+// Sem persistir o dono, bastava recarregar a página para a casa dos bots virar
+// terreno livre e o jogador poder derrubá-la.
 // Nada aqui toca indexedDB no import — só dentro de openStorage/flushDiffs —
 // para o módulo poder ser importado em Node puro (queueDiff é só memória).
 
@@ -13,8 +18,10 @@ let db = null;
 
 // Diffs já persistidos (carregados/gravados): Map<chunkKey, Map<blockIdx, blockId>>
 const stored = new Map();
+const storedOwners = new Map();
 // Diffs acumulados em memória desde o último flush.
 const pending = new Map();
+const pendingOwners = new Map();
 
 let flushTimer = null;
 let listenersRegistered = false;
@@ -70,7 +77,8 @@ export async function openStorage() {
 }
 
 /**
- * loadAllDiffs() -> Map<chunkKey, Map<blockIdx, blockId>>
+ * loadAllDiffs() -> { blocks, owners }, ambos Map<chunkKey, Map<blockIdx, valor>>
+ * — `blocks` guarda o id do bloco, `owners` o dono (só as células com dono).
  */
 export async function loadAllDiffs() {
   const d = await openStorage();
@@ -81,20 +89,27 @@ export async function loadAllDiffs() {
     requestToPromise(store.getAll()),
   ]);
 
-  const result = new Map();
+  const blocks = new Map();
+  const owners = new Map();
   for (let i = 0; i < keys.length; i++) {
     const blockMap = new Map();
-    for (const [idx, id] of values[i] || []) blockMap.set(idx, id);
-    result.set(keys[i], blockMap);
+    const ownerMap = new Map();
+    for (const [idx, id, owner] of values[i] || []) {
+      blockMap.set(idx, id);
+      if (owner) ownerMap.set(idx, owner);
+    }
+    blocks.set(keys[i], blockMap);
+    if (ownerMap.size) owners.set(keys[i], ownerMap);
     stored.set(keys[i], new Map(blockMap)); // base para os próximos flushes
+    if (ownerMap.size) storedOwners.set(keys[i], new Map(ownerMap));
   }
-  return result;
+  return { blocks, owners };
 }
 
 /**
  * Acumula um diff em memória. Última escrita vence dentro do mesmo bloco.
  */
-export function queueDiff(cx, cz, blockIdx, blockId) {
+export function queueDiff(cx, cz, blockIdx, blockId, owner = 0) {
   const key = chunkKey(cx, cz);
   let blockMap = pending.get(key);
   if (!blockMap) {
@@ -102,6 +117,13 @@ export function queueDiff(cx, cz, blockIdx, blockId) {
     pending.set(key, blockMap);
   }
   blockMap.set(blockIdx, blockId);
+
+  let ownerMap = pendingOwners.get(key);
+  if (!ownerMap) {
+    ownerMap = new Map();
+    pendingOwners.set(key, ownerMap);
+  }
+  ownerMap.set(blockIdx, owner);
 }
 
 /**
@@ -119,9 +141,25 @@ export async function flushDiffs() {
       stored.set(key, base);
     }
     for (const [idx, id] of blockMap) base.set(idx, id);
-    toWrite.push([key, Array.from(base.entries())]);
+
+    let baseOwners = storedOwners.get(key);
+    if (!baseOwners) {
+      baseOwners = new Map();
+      storedOwners.set(key, baseOwners);
+    }
+    for (const [idx, owner] of pendingOwners.get(key) || []) {
+      if (owner) baseOwners.set(idx, owner);
+      else baseOwners.delete(idx);
+    }
+
+    // Célula sem dono grava só o par: o terceiro campo existe onde há posse.
+    toWrite.push([key, Array.from(base.entries(), ([idx, id]) => {
+      const owner = baseOwners.get(idx);
+      return owner ? [idx, id, owner] : [idx, id];
+    })]);
   }
   pending.clear();
+  pendingOwners.clear();
 
   const tx = db.transaction(STORE, 'readwrite');
   const store = tx.objectStore(STORE);

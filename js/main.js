@@ -10,8 +10,8 @@ import { BotManager } from './bots/botManager.js';
 
 async function boot() {
   await openStorage();
-  const diffs = await loadAllDiffs();
-  const world = new World(WORLD_SEED, diffs);
+  const { blocks, owners } = await loadAllDiffs();
+  const world = new World(WORLD_SEED, blocks, owners);
 
   const canvas = document.getElementById('game');
   const { renderer, scene, camera } = createScene(canvas);

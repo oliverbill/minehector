@@ -1,7 +1,7 @@
 // Interação com o mundo: mira (raycast + wireframe de destaque),
 // quebrar/colocar bloco e seleção do hotbar.
 import * as THREE from 'three';
-import { Blocks } from '../constants.js';
+import { Blocks, Owner } from '../constants.js';
 import { raycastVoxel } from './raycast.js';
 
 // Alcance em blocos, medido a partir do olho. Com 5 a mira já falhava em
@@ -38,14 +38,18 @@ export class Interaction {
       }
       if (button === 0) {
         const b = this._target.block;
-        this.world.setBlock(b.x, b.y, b.z, Blocks.AIR);
+        if (!this.world.setBlock(b.x, b.y, b.z, Blocks.AIR, Owner.PLAYER)) {
+          this._say('Obra dos bots — só quem construiu mexe');
+        }
       } else if (button === 2) {
         const cell = this._placementCell(this._target);
         if (!cell) {
           this._say('Aí não dá — o bloco ficaria dentro de você');
           return;
         }
-        this.world.setBlock(cell.x, cell.y, cell.z, this.selectedBlock);
+        if (!this.world.setBlock(cell.x, cell.y, cell.z, this.selectedBlock, Owner.PLAYER)) {
+          this._say('Obra dos bots — só quem construiu mexe');
+        }
       }
     });
 
