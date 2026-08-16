@@ -115,9 +115,9 @@ AABB: `[pos.x ± width/2, pos.y .. pos.y+height, pos.z ± width/2]`. Compartilha
 ### raycast.js
 ```js
 export function raycastVoxel(world, origin, dir, maxDist)
-// -> { block: {x,y,z}, prev: {x,y,z}, normal: {x,y,z} } | null
+// -> { block: {x,y,z}, prev: {x,y,z}, normal: {x,y,z}, t } | null
 ```
-DDA (Amanatides & Woo). `block` = primeiro sólido atingido; `prev` = célula anterior (onde colocar bloco).
+DDA (Amanatides & Woo). `block` = primeiro sólido atingido; `prev` = célula anterior (candidata a receber o bloco); `t` = distância até a face, para quem precisa do ponto mirado (`origin + dir*t`) e não só da célula.
 
 ### player.js
 ```js
@@ -143,7 +143,13 @@ export class Interaction {
 
 **Nenhuma recusa silenciosa.** Clique que não faz nada é indistinguível de jogo quebrado. As duas recusas possíveis — não há bloco no alcance, e a cela ficaria dentro do jogador — dizem o motivo em `#toast`, e a mira ganha `.idle` quando não há alvo. O destaque do bloco mirado é branco com `depthTest: false`: um contorno preto translúcido desaparecia contra pedra e sombra. O alcance é 6 e não 5 porque com 5 o chão de um terreno que desce à frente cai a ~5,07 do olho e o clique morria calado.
 
-**Colocar sobe quando a célula é do jogador** (`_placementCell`). O destino normal é `prev`, a vizinha da face mirada. Se essa célula é do jogador — o corpo dentro dela, ou ela a prumo dele dos pés para cima — e a face mirada é lateral, o bloco vai para o **topo do bloco mirado**; se lá for sólido, aí sim recusa com toast. Sem isto uma coluna à frente travava em exatamente 2 blocos: o topo passa da linha do olho (1,62), a face de cima deixa de ser visível e só resta a lateral, cuja vizinha é o próprio jogador. Faces de cima e de baixo não sobem — seria colocar do outro lado do bloco, fora de vista. Encostado numa coluna dá para subir ~9 blocos antes do alcance acabar; daí pula-se em cima dela e continua.
+**Mirar alto numa face lateral coloca em cima** (`_placementCell`). O destino normal é `prev`, a vizinha da face mirada. O bloco vai para o **topo do bloco mirado** em dois casos, ambos com face lateral:
+1. `prev` é célula do jogador — o corpo dentro dela, ou ela a prumo dele dos pés para cima (você está colado na coluna);
+2. o raio está subindo (`dir.y > 0`) e o ponto mirado cai na **metade de cima** da face (`hit.t` dá o ponto: `eye + dir*t`).
+
+Se o topo estiver ocupado, cai de volta em `prev` — e se `prev` for do jogador, recusa com toast. Mirar na metade de baixo continua colocando ao lado: é assim que se estende parede na horizontal, inclusive acima da cabeça.
+
+Sem isto, uma coluna à frente travava em exatamente 2 blocos: passados 2, o topo fica acima da linha do olho (1,62), a face de cima some da vista e só resta a lateral — cuja vizinha ou é o jogador (colado) ou é um bloco solto ao lado (de longe). O critério é onde se mira, não onde se está: a 2 blocos de distância a coluna sobe igual, sem colar nela. Faces de cima e de baixo nunca sobem — seria colocar do outro lado do bloco, fora de vista. O teto é o alcance de 6 medido do olho; daí pula-se em cima da coluna e continua.
 Registra em `input.onMouseButton`: esquerdo quebra (`setBlock AIR`), direito coloca `selectedBlock` na célula que `_placementCell` escolher. Registra em `input.onKeyPress`: Digit1..Digit6 selecionam GRASS..LEAVES e atualizam a classe `.active` nos elementos `#hotbar .slot` (data-block já no HTML).
 
 ## js/bots/ (frente D)

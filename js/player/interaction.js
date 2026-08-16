@@ -71,22 +71,38 @@ export class Interaction {
 
   // Onde o bloco novo vai cair, ou null se não há lugar possível.
   //
-  // O normal é a célula vizinha à face mirada. Quando essa célula é do jogador, a
-  // colocação sobe para o topo do bloco mirado — a única célula livre ainda
-  // encostada no que se mirou. É isto que destrava empilhar: passados 2 blocos, o
-  // topo da coluna fica acima da linha do olho (1,62), a face de cima deixa de ser
-  // visível e só resta a face lateral, cuja vizinha é o próprio jogador.
-  //
-  // Só vale para faces laterais: numa face de cima ou de baixo, "subir" seria
-  // colocar do outro lado do bloco, fora de vista.
+  // O destino normal é a célula vizinha à face mirada. Duas situações mandam o
+  // bloco para o TOPO do bloco mirado, e as duas são a mesma queixa: passados 2
+  // blocos, o topo de uma coluna fica acima da linha do olho (1,62) e a face de
+  // cima some da vista — só resta a lateral, e a vizinha dela nunca é onde se
+  // quer empilhar.
+  //   1. a célula vizinha é do jogador (você está colado na coluna);
+  //   2. você mirou a metade de cima de uma face lateral com o raio subindo —
+  //      dali a face de cima é invisível, e mirar alto é pedir para subir.
+  // A metade de baixo continua colocando ao lado: é assim que se estende uma
+  // parede na horizontal, inclusive acima da cabeça.
   _placementCell(hit) {
     const cell = hit.prev;
-    if (!this._isPlayerCell(cell)) return cell;
-    if (hit.normal.y !== 0) return null;
-    const up = { x: hit.block.x, y: hit.block.y + 1, z: hit.block.z };
-    if (this.world.isSolid(up.x, up.y, up.z)) return null;
-    if (this._isPlayerCell(up)) return null;
-    return up;
+    const blocked = this._isPlayerCell(cell);
+    if (this._isSideFace(hit) && (blocked || this._aimedHigh(hit))) {
+      const up = { x: hit.block.x, y: hit.block.y + 1, z: hit.block.z };
+      if (!this.world.isSolid(up.x, up.y, up.z) && !this._isPlayerCell(up)) return up;
+    }
+    // Topo ocupado (ou reservado ao corpo) cai de volta na regra de sempre.
+    return blocked ? null : cell;
+  }
+
+  // Face lateral de verdade. O caso "olho dentro de bloco sólido" volta com
+  // normal (0,0,0) e não é face nenhuma — sem isto, subiria por engano.
+  _isSideFace(hit) {
+    return hit.normal.x !== 0 || hit.normal.z !== 0;
+  }
+
+  // Raio subindo e ponto mirado na metade de cima da face.
+  _aimedHigh(hit) {
+    if (!this._dir || this._dir.y <= 0) return false;
+    const hitY = this.player.eyePos.y + this._dir.y * hit.t;
+    return hitY - hit.block.y >= 0.5;
   }
 
   // Célula do jogador: ou o corpo está dentro dela, ou ela fica a prumo dele, da
@@ -122,6 +138,7 @@ export class Interaction {
     };
     const hit = raycastVoxel(this.world, eye, dir, REACH);
     this._target = hit;
+    this._dir = dir; // guardado com o alvo: a colocação precisa saber onde se mirou
 
     if (hit) {
       this._highlight.position.set(hit.block.x + 0.5, hit.block.y + 0.5, hit.block.z + 0.5);

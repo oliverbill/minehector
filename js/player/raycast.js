@@ -12,6 +12,7 @@ export function raycastVoxel(world, origin, dir, maxDist) {
       block: { x, y, z },
       prev: { x, y, z },
       normal: { x: 0, y: 0, z: 0 },
+      t: 0,
     };
   }
 
@@ -51,6 +52,7 @@ export function raycastVoxel(world, origin, dir, maxDist) {
         block: { x, y, z },
         prev: { x: x + nx, y: y + ny, z: z + nz },
         normal: { x: nx, y: ny, z: nz },
+        t, // distância até a face; origin + dir*t é o ponto mirado dentro da face
       };
     }
   }
