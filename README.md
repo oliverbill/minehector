@@ -3,7 +3,13 @@
 Jogo voxel estilo Minecraft, single-player, que roda inteiro no navegador — sem servidor,
 sem build step, sem dependências além do Three.js vendorado em `lib/`.
 
-## Rodar
+**Jogar: https://oliverbill.github.io/minehector/**
+
+Publicado por GitHub Pages a partir da raiz da branch `main` — o que está em `main` é o que
+está no ar, sem workflow no meio. O mundo é salvo no IndexedDB do próprio navegador, então
+cada pessoa que abrir o link tem o seu.
+
+## Rodar localmente
 
 Sirva a pasta com qualquer servidor estático e abra no navegador:
 
@@ -34,6 +40,16 @@ física AABB própria contra a grade de voxels; bots com FSM simples que usam a 
 física do jogador; persistência apenas das diferenças (blocos editados) em IndexedDB.
 
 Detalhes e contratos entre módulos: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Testes
+
+```sh
+node tests/run.mjs
+```
+
+Sem dependências: os testes carregam os módulos reais do jogo, com o especificador `three`
+resolvido para `lib/three.module.js` como o importmap do `index.html` faz no navegador.
+Cobrem a interação — mira, colocar, quebrar, alcance e o contrato do raycast.
 
 ```
 js/
