@@ -3,7 +3,7 @@
 Jogo voxel estilo Minecraft, single-player, que roda inteiro no navegador — sem servidor,
 sem build step, sem dependências além do Three.js vendorado em `lib/`.
 
-**Jogar: https://oliverbill.github.io/minehector/**
+**Jogar: [oliverbill.github.io/minehector](https://oliverbill.github.io/minehector/)**
 
 Publicado por GitHub Pages a partir da raiz da branch `main` — o que está em `main` é o que
 está no ar, sem workflow no meio. O mundo é salvo no IndexedDB do próprio navegador, então
