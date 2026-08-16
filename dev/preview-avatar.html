@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Preview dos avatares</title>
+  <script type="importmap">
+    { "imports": { "three": "../lib/three.module.js" } }
+  </script>
+  <style>
+    body { background: #6a9c48; margin: 0; font: 14px sans-serif; color: #fff; }
+    canvas { image-rendering: pixelated; display: block; margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <canvas id="out" width="1100" height="620"></canvas>
+  <script type="module">
+    import { createAvatar } from '../js/bots/avatar.js';
+
+    const S = 260;                       // pixels por bloco
+    const ctx = document.getElementById('out').getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    // Vista ortográfica: desenha a face escolhida de cada caixa na posição dela.
+    function draw(avatar, cx, baseY, faceIndex, label) {
+      const parts = [];
+      avatar.group.traverse((o) => { if (o.isMesh) parts.push(o); });
+      // Frente por último para o tronco não cobrir os braços na vista lateral.
+      parts.sort((a, b) => a.position.z - b.position.z);
+      for (const mesh of parts) {
+        const p = mesh.geometry.parameters;
+        const x = mesh.position.x + (mesh.parent ? mesh.parent.position.x : 0);
+        const y = mesh.position.y + (mesh.parent ? mesh.parent.position.y : 0);
+        const w = faceIndex === 4 ? p.width : p.depth;
+        const img = mesh.material[faceIndex].map.image;
+        ctx.drawImage(img,
+          cx + (x - w / 2) * S, baseY - (y + p.height / 2) * S,
+          w * S, p.height * S);
+      }
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, cx, baseY + 30);
+    }
+
+    const roster = [['Ana', 0xcc3333], ['Beto', 0x3366cc], ['Caio', 0xe6cc33]];
+    let x = 150;
+    for (const [name, color] of roster) {
+      const a = createAvatar(name, color);
+      a.animate(1 / 60, 0, true);
+      draw(a, x, 540, 4, `${name} — frente`);
+      draw(a, x + 190, 540, 5, 'costas');
+      x += 360;
+    }
+  </script>
+</body>
+</html>

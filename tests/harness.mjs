@@ -11,10 +11,28 @@ import { Interaction } from '../js/player/interaction.js';
 
 export { Blocks };
 
-// Interaction só toca no DOM para o toast e a mira; ambos são opcionais.
+// DOM de mentira. Interaction só lê o toast e a mira (ambos opcionais); o avatar
+// dos bots desenha em canvas 2D. O contexto falso guarda cada fillRect com a cor
+// usada, para um teste poder afirmar o que foi pintado — sem isso a única coisa
+// verificável seria "não explodiu".
 export function stubDom() {
   if (globalThis.document) return;
-  globalThis.document = { getElementById: () => null, querySelectorAll: () => [] };
+  globalThis.document = {
+    getElementById: () => null,
+    querySelectorAll: () => [],
+    createElement: (tag) => {
+      if (tag !== 'canvas') return {};
+      const ops = [];
+      const ctx = {
+        ops,
+        fillStyle: '#000', font: '', textAlign: '', textBaseline: '',
+        fillRect: (x, y, w, h) => ops.push({ x, y, w, h, color: ctx.fillStyle }),
+        fillText: (text) => ops.push({ text }),
+        getImageData: () => ({ data: new Uint8ClampedArray(4) }),
+      };
+      return { width: 0, height: 0, ops, getContext: () => ctx };
+    },
+  };
 }
 
 /** Input falso: serve a Player (isDown/consumeMouseDelta) e a Interaction (callbacks). */

@@ -162,7 +162,18 @@ export class BotManager {
 }
 ```
 Bot: mesma física do jogador (`moveEntity` de `js/player/physics.js`), width 0.6 height 1.8.
-Corpo: Group com caixas coloridas (corpo + cabeça) + `THREE.Sprite` com o nome (canvas) acima.
+
+### avatar.js
+```js
+export function createAvatar(name, color) // -> { group, animate(dt, speed, onGround) }
+```
+Boneco humanoide segmentado: cabeça 8×8×8, tronco 8×12×4, braços e pernas 4×12×4, em unidades `U = 1.8/32` — 32 U de altura para casar com a AABB do bot. Braços e pernas penduram de um `Group` no ombro/quadril, então giram como articulação. A skin é pixel art desenhada por código (canvas 2D, `NearestFilter`), uma textura por face, com o rosto na face **+Z** — que é a frente, porque o mesh é girado por `atan2(vel.x, vel.z)`.
+
+**Duas caixas coloridas não têm frente.** De lado ou de costas o bot antigo era o mesmo borrão, e não dava para saber se vinha, ia ou estava parado. Cabeça, membros e rosto resolvem isso à distância em que a IA decide seguir (10 blocos).
+
+Pele, cabelo, calça, sapato, olhar e padrão da roupa saem de um hash do **nome** — o mesmo nome dá sempre o mesmo boneco, entre sessões e máquinas, como o resto do projeto evita `Math.random`. A camisa vem do `color` do roster. `animate` faz a passada acompanhar a velocidade real (sem patinar), morrer quando o bot para, dar respiração e olhada no idle, e levantar os braços no ar. A fase inicial é aleatória por bot para não marcharem em sincronia.
+
+Para conferir a skin sem GPU: `dev/preview-avatar.html` desenha as próprias texturas do avatar numa vista ortográfica de frente e de costas.
 FSM: `idle` (2–4s) → `wander` (escolhe ponto a até 12 blocos, steering na direção, pula se `onGround` e bloqueado à frente, desiste após ~6s) → `follow` (se jogador a <10 blocos, 30% de chance ao decidir; para a 2 blocos). Spawn: em círculo de raio ~10 ao redor do spawn do jogador, em `world.surfaceHeight + 1`. Nomes fixos: Ana, Beto, Caio. O mesh é orientado na direção do movimento.
 
 ## Boot (js/main.js — já escrito, frentes não tocam)

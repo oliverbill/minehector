@@ -5,7 +5,7 @@
 // testável em Node com um rng injetado. A classe Bot embrulha o cérebro com
 // o corpo visual e o steering.
 
-import * as THREE from 'three';
+import { createAvatar } from './avatar.js';
 
 // ---------------------------------------------------------------------------
 // Parâmetros da FSM / movimento (contrato do ARCHITECTURE.md)
@@ -79,55 +79,6 @@ export class BotBrain {
 }
 
 // ---------------------------------------------------------------------------
-// Corpo visual
-// ---------------------------------------------------------------------------
-function makeNameSprite(name) {
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 64;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.font = 'bold 34px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText(name, canvas.width / 2, canvas.height / 2 + 2);
-
-  const texture = new THREE.CanvasTexture(canvas);
-  const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: texture, transparent: true })
-  );
-  sprite.scale.set(1.6, 0.4, 1);
-  sprite.position.y = 2.2;
-  return sprite;
-}
-
-function makeBody(color, name) {
-  const group = new THREE.Group();
-
-  const bodyColor = new THREE.Color(color);
-  const headColor = bodyColor.clone().lerp(new THREE.Color(0xffffff), 0.35);
-
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(0.55, 1.05, 0.3),
-    new THREE.MeshLambertMaterial({ color: bodyColor })
-  );
-  body.position.y = 0.525; // origem do group na base (pés)
-  group.add(body);
-
-  const head = new THREE.Mesh(
-    new THREE.BoxGeometry(0.5, 0.5, 0.5),
-    new THREE.MeshLambertMaterial({ color: headColor })
-  );
-  head.position.y = 1.3;
-  group.add(head);
-
-  group.add(makeNameSprite(name));
-  return group;
-}
-
-// ---------------------------------------------------------------------------
 // Bot: entidade física + cérebro + mesh
 // ---------------------------------------------------------------------------
 export class Bot {
@@ -145,7 +96,8 @@ export class Bot {
     this.yaw = 0;
     this.targetYaw = 0;
 
-    this.mesh = makeBody(color, name);
+    this.avatar = createAvatar(name, color);
+    this.mesh = this.avatar.group;
     this.mesh.position.set(this.pos.x, this.pos.y, this.pos.z);
   }
 
@@ -214,13 +166,15 @@ export class Bot {
     }
   }
 
-  // Sincroniza o mesh com a física e suaviza a rotação Y na direção do
-  // movimento (interpolação pelo menor arco).
+  // Sincroniza o mesh com a física, suaviza a rotação Y na direção do movimento
+  // (interpolação pelo menor arco) e anima o boneco com a velocidade real — a
+  // passada tem de casar com o chão, senão o bot patina.
   syncMesh(dt) {
     this.mesh.position.set(this.pos.x, this.pos.y, this.pos.z);
 
     const sx = this.vel.x;
     const sz = this.vel.z;
+    const speed = Math.hypot(sx, sz);
     if (sx * sx + sz * sz > 1e-4) {
       this.targetYaw = Math.atan2(sx, sz);
     }
@@ -228,5 +182,7 @@ export class Bot {
     d = Math.atan2(Math.sin(d), Math.cos(d));
     this.yaw += d * Math.min(1, dt * 8);
     this.mesh.rotation.y = this.yaw;
+
+    this.avatar.animate(dt, speed, this.onGround);
   }
 }
