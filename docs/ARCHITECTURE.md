@@ -142,7 +142,9 @@ export class Interaction {
 ```
 
 **Nenhuma recusa silenciosa.** Clique que não faz nada é indistinguível de jogo quebrado. As duas recusas possíveis — não há bloco no alcance, e a cela ficaria dentro do jogador — dizem o motivo em `#toast`, e a mira ganha `.idle` quando não há alvo. O destaque do bloco mirado é branco com `depthTest: false`: um contorno preto translúcido desaparecia contra pedra e sombra. O alcance é 6 e não 5 porque com 5 o chão de um terreno que desce à frente cai a ~5,07 do olho e o clique morria calado.
-Registra em `input.onMouseButton`: esquerdo quebra (`setBlock AIR`), direito coloca `selectedBlock` em `prev` — recusando se a célula intersecta a AABB do jogador. Registra em `input.onKeyPress`: Digit1..Digit6 selecionam GRASS..LEAVES e atualizam a classe `.active` nos elementos `#hotbar .slot` (data-block já no HTML).
+
+**Colocar sobe quando a célula é do jogador** (`_placementCell`). O destino normal é `prev`, a vizinha da face mirada. Se essa célula é do jogador — o corpo dentro dela, ou ela a prumo dele dos pés para cima — e a face mirada é lateral, o bloco vai para o **topo do bloco mirado**; se lá for sólido, aí sim recusa com toast. Sem isto uma coluna à frente travava em exatamente 2 blocos: o topo passa da linha do olho (1,62), a face de cima deixa de ser visível e só resta a lateral, cuja vizinha é o próprio jogador. Faces de cima e de baixo não sobem — seria colocar do outro lado do bloco, fora de vista. Encostado numa coluna dá para subir ~9 blocos antes do alcance acabar; daí pula-se em cima dela e continua.
+Registra em `input.onMouseButton`: esquerdo quebra (`setBlock AIR`), direito coloca `selectedBlock` na célula que `_placementCell` escolher. Registra em `input.onKeyPress`: Digit1..Digit6 selecionam GRASS..LEAVES e atualizam a classe `.active` nos elementos `#hotbar .slot` (data-block já no HTML).
 
 ## js/bots/ (frente D)
 

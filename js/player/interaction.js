@@ -40,12 +40,12 @@ export class Interaction {
         const b = this._target.block;
         this.world.setBlock(b.x, b.y, b.z, Blocks.AIR);
       } else if (button === 2) {
-        const p = this._target.prev;
-        if (this._cellIntersectsPlayer(p)) {
+        const cell = this._placementCell(this._target);
+        if (!cell) {
           this._say('Aí não dá — o bloco ficaria dentro de você');
           return;
         }
-        this.world.setBlock(p.x, p.y, p.z, this.selectedBlock);
+        this.world.setBlock(cell.x, cell.y, cell.z, this.selectedBlock);
       }
     });
 
@@ -67,6 +67,38 @@ export class Interaction {
     this._toast.classList.add('show');
     clearTimeout(this._toastTimer);
     this._toastTimer = setTimeout(() => this._toast.classList.remove('show'), 1600);
+  }
+
+  // Onde o bloco novo vai cair, ou null se não há lugar possível.
+  //
+  // O normal é a célula vizinha à face mirada. Quando essa célula é do jogador, a
+  // colocação sobe para o topo do bloco mirado — a única célula livre ainda
+  // encostada no que se mirou. É isto que destrava empilhar: passados 2 blocos, o
+  // topo da coluna fica acima da linha do olho (1,62), a face de cima deixa de ser
+  // visível e só resta a face lateral, cuja vizinha é o próprio jogador.
+  //
+  // Só vale para faces laterais: numa face de cima ou de baixo, "subir" seria
+  // colocar do outro lado do bloco, fora de vista.
+  _placementCell(hit) {
+    const cell = hit.prev;
+    if (!this._isPlayerCell(cell)) return cell;
+    if (hit.normal.y !== 0) return null;
+    const up = { x: hit.block.x, y: hit.block.y + 1, z: hit.block.z };
+    if (this.world.isSolid(up.x, up.y, up.z)) return null;
+    if (this._isPlayerCell(up)) return null;
+    return up;
+  }
+
+  // Célula do jogador: ou o corpo está dentro dela, ou ela fica a prumo dele, da
+  // altura dos pés para cima. As duas coisas são precisas: o corpo (0,6 de largura)
+  // pode estar a cavalo de duas células, e uma célula acima da cabeça não toca o
+  // corpo mas receberia um bloco pendurado no ar — nenhum dos dois é o que se quer
+  // ao mirar uma coluna de baixo para cima.
+  _isPlayerCell(cell) {
+    if (this._cellIntersectsPlayer(cell)) return true;
+    const p = this.player.pos;
+    return cell.x === Math.floor(p.x) && cell.z === Math.floor(p.z) &&
+      cell.y >= Math.floor(p.y);
   }
 
   // AABB do bloco novo [cell, cell+1)³ contra a AABB do jogador.
