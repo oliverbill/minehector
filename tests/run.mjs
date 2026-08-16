@@ -19,5 +19,7 @@ console.log('CuboCraft — testes\n');
 await import('./raycast.test.mjs');
 await import('./placement.test.mjs');
 await import('./avatar.test.mjs');
+await import('./structures.test.mjs');
+await import('./bots.test.mjs');
 
 process.exit((await runAll()) === 0 ? 0 : 1);

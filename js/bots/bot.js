@@ -21,6 +21,11 @@ export const FOLLOW_STOP = 2;     // blocos: para de avançar
 export const FOLLOW_LOSE = 14;    // blocos: abandona o follow
 export const WALK_SPEED = 3.5;    // blocos/s
 export const JUMP_SPEED = 8.5;    // blocos/s (vel.y ao pular)
+export const BUILD_CHANCE = 0.35; // chance de começar uma obra, se houver lugar
+export const VISIT_CHANCE = 0.35; // chance de ir visitar uma construção pronta
+export const VISIT_RANGE = 30;    // blocos: até onde procura uma porta
+export const VISIT_ARRIVE = 1.0;  // blocos: chegou à porta / ao meio da casa
+export const BUILD_RANGE = 3.0;   // blocos: perto o bastante do sítio p/ assentar
 
 // ---------------------------------------------------------------------------
 // FSM pura — sem THREE, sem world, sem DOM.
@@ -34,8 +39,9 @@ export class BotBrain {
   }
 
   // Chamada a cada tick de pensamento (~0.3s), com o tempo decorrido desde o
-  // último tick. ctx = { x, z, playerDist } (posição do bot e distância
-  // horizontal até o jogador). Retorna o estado corrente.
+  // último tick. ctx = { x, z, playerDist, canBuild, building, door } — posição
+  // do bot, distância horizontal até o jogador, se há lugar para uma obra nova,
+  // se a obra dele ainda corre, e a porta mais próxima. Retorna o estado.
   update(elapsed, ctx) {
     this.timer -= elapsed;
 
@@ -48,6 +54,24 @@ export class BotBrain {
       if (arrived || this.timer <= 0) this._toIdle();
     } else if (this.state === 'follow') {
       if (ctx.playerDist > FOLLOW_LOSE) this._toIdle();
+    } else if (this.state === 'build') {
+      // Quem encerra a obra é o corpo (o Bot), que sabe se ainda há bloco na
+      // fila; o cérebro só desiste se ela nunca começou.
+      if (!ctx.building) this._toIdle();
+    } else if (this.state === 'visit') {
+      const d = Math.hypot(this.target.x - ctx.x, this.target.z - ctx.z);
+      if (d < VISIT_ARRIVE) {
+        // Chegou à soleira: entra. Parar na porta é ficar de fora.
+        if (this.visitStage === 'door' && this.target.inside) {
+          this.visitStage = 'inside';
+          this.target = { x: this.target.inside.x, z: this.target.inside.z, inside: null };
+          this.timer = WANDER_TIMEOUT;
+        } else {
+          this._toIdle();
+        }
+      } else if (this.timer <= 0) {
+        this._toIdle();
+      }
     }
     return this.state;
   }
@@ -56,11 +80,26 @@ export class BotBrain {
     this.state = 'idle';
     this.timer = IDLE_MIN + this.rng() * (IDLE_MAX - IDLE_MIN);
     this.target = null;
+    this.visitStage = null;
   }
 
-  // Decisão de novo estado (ao fim do idle): 30% de follow se o jogador está
-  // a menos de 10 blocos; senão, wander para um ponto aleatório até 12 blocos.
+  // Decisão de novo estado (ao fim do idle): construir, visitar uma construção
+  // pronta, seguir o jogador ou vaguear. Construir vem primeiro porque é o que
+  // muda o mundo; visitar dá vida às casas que já existem.
   _decideNext(ctx) {
+    if (ctx.canBuild && this.rng() < BUILD_CHANCE) {
+      this.state = 'build';
+      this.timer = 0;
+      this.target = null;
+      return;
+    }
+    if (ctx.door && this.rng() < VISIT_CHANCE) {
+      this.state = 'visit';
+      this.visitStage = 'door';
+      this.target = { x: ctx.door.x, z: ctx.door.z, inside: ctx.door.inside || null };
+      this.timer = WANDER_TIMEOUT * 2;
+      return;
+    }
     if (ctx.playerDist < FOLLOW_START && this.rng() < FOLLOW_CHANCE) {
       this.state = 'follow';
       this.timer = 0;
@@ -82,8 +121,10 @@ export class BotBrain {
 // Bot: entidade física + cérebro + mesh
 // ---------------------------------------------------------------------------
 export class Bot {
-  constructor(name, color, spawnPos, rng = Math.random) {
+  constructor(name, color, spawnPos, rng = Math.random, village = null) {
     this.name = name;
+    this.village = village;
+    this.job = null;      // obra em andamento (village.js)
 
     // Contrato de entity do moveEntity (physics.js): pos = centro da base.
     this.pos = { x: spawnPos.x, y: spawnPos.y, z: spawnPos.z };
@@ -101,15 +142,38 @@ export class Bot {
     this.mesh.position.set(this.pos.x, this.pos.y, this.pos.z);
   }
 
-  // Tick de IA (~0.3s): alimenta a FSM com a distância horizontal ao jogador.
+  // Tick de IA (~0.3s): alimenta a FSM com a distância ao jogador, se há lugar
+  // para uma obra e qual a porta mais próxima.
   think(elapsed, playerPos) {
     const dx = playerPos.x - this.pos.x;
     const dz = playerPos.z - this.pos.z;
+    const v = this.village;
+    const antes = this.brain.state;
+
     this.brain.update(elapsed, {
       x: this.pos.x,
       z: this.pos.z,
       playerDist: Math.hypot(dx, dz),
+      canBuild: !!v && !v.full && !this.job,
+      building: !!this.job,
+      door: v ? v.nearestDoor(this.pos.x, this.pos.z, VISIT_RANGE) : null,
     });
+
+    // Entrou em 'build' agora: procura o terreno. Sem sítio, volta a vaguear —
+    // terreno quebrado é comum e insistir travaria o bot no lugar.
+    if (this.brain.state === 'build' && antes !== 'build' && !this.job && v) {
+      this.job = v.planNear(this.pos.x, this.pos.z);
+      if (!this.job) this.brain._toIdle();
+    }
+  }
+
+  // Assentamento: só trabalha depois de chegar ao pé da obra. Um bot que
+  // constrói de longe parece telecinese.
+  build(dt, occupants) {
+    if (!this.job) return;
+    const p = this.job.standPoint;
+    if (Math.hypot(p.x - this.pos.x, p.z - this.pos.z) > BUILD_RANGE) return;
+    if (this.job.step(dt, occupants)) this.job = null;
   }
 
   // Steering por frame: seta vel.x/vel.z na direção do alvo do estado atual
@@ -119,9 +183,16 @@ export class Bot {
     let tz = null;
     const b = this.brain;
 
-    if (b.state === 'wander' && b.target) {
+    if ((b.state === 'wander' || b.state === 'visit') && b.target) {
       tx = b.target.x;
       tz = b.target.z;
+    } else if (b.state === 'build' && this.job) {
+      const p = this.job.standPoint;
+      // Chegou ao pé da obra: para e trabalha.
+      if (Math.hypot(p.x - this.pos.x, p.z - this.pos.z) > BUILD_RANGE * 0.7) {
+        tx = p.x;
+        tz = p.z;
+      }
     } else if (b.state === 'follow') {
       const d = Math.hypot(playerPos.x - this.pos.x, playerPos.z - this.pos.z);
       if (d > FOLLOW_STOP) {

@@ -32,6 +32,18 @@ python3 -m http.server 8080
 | 1–6 | escolher bloco do hotbar |
 | ESC | soltar o mouse |
 
+## O que acontece sozinho no mundo
+
+Três bots (Ana, Beto e Caio) vivem no mundo com a mesma física do jogador. Cada um é um boneco
+humanoide com skin própria, gerada a partir do nome. Eles vagueiam, às vezes seguem você, e
+**levantam construções**: cabana com varanda, casa de palafita com escada, torre de vigia com
+caracol e sacada, poço, roça cercada e sobrado de dois andares. A obra é assentada bloco a bloco,
+à vista.
+
+Todas as construções são habitáveis: porta de 2 blocos, pé-direito de 2 e degraus de 1 — você
+entra, sobe as escadas e chega à sacada da torre e ao andar de cima do sobrado. Os bots também
+entram nelas.
+
 ## Arquitetura
 
 Mundo infinito em chunks 16×16×64 gerados por ruído simplex a partir de uma seed;

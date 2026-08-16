@@ -1,0 +1,196 @@
+// Construções: o que se promete é que dá para entrar nelas. O teste anda pelo
+// mundo como o jogo anda — 1,8 de altura (duas células livres), degrau de no
+// máximo 1 bloco, que é o que o pulo vence — e exige que os pontos de dentro
+// sejam alcançáveis a partir de fora. Se alguém fechar uma porta ou levantar um
+// degrau, isto cai.
+
+import { test, assert, assertEqual } from './tiny-test.mjs';
+import { flatWorld, Blocks } from './harness.mjs';
+import { planStructure, STRUCTURE_KINDS, footprint } from '../js/world/structures.js';
+import { Village, BuildJob, MAX_STRUCTURES } from '../js/bots/village.js';
+
+// rng determinístico para o teste não depender da sorte
+function seeded(seed) {
+  let s = seed;
+  return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
+}
+
+function build(world, kind, origin, rnd = seeded(7)) {
+  const plan = planStructure(kind, rnd);
+  for (const [x, y, z, id] of plan.blocks) {
+    world.setBlock(origin.x + x, origin.y + y, origin.z + z, id);
+  }
+  return plan;
+}
+
+// Célula onde se pode ficar de pé: chão sólido embaixo, duas livres para o corpo.
+function standable(world, x, y, z) {
+  return world.isSolid(x, y - 1, z)
+    && !world.isSolid(x, y, z)
+    && !world.isSolid(x, y + 1, z);
+}
+
+// Alcançáveis a partir de (x,y,z), com as regras de movimento do jogo.
+function reachable(world, start, limit = 20000) {
+  const seen = new Set();
+  const queue = [start];
+  seen.add(`${start.x},${start.y},${start.z}`);
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+  while (queue.length && seen.size < limit) {
+    const cur = queue.shift();
+    for (const [dx, dz] of dirs) {
+      const nx = cur.x + dx;
+      const nz = cur.z + dz;
+      // Subir no máximo 1 (pulo), descer o que for (queda).
+      for (let dy = 1; dy >= -3; dy--) {
+        const ny = cur.y + dy;
+        if (ny < 1) continue;
+        if (!standable(world, nx, ny, nz)) continue;
+        // Para subir um degrau é preciso ter espaço acima da cabeça na origem.
+        if (dy === 1 && world.isSolid(cur.x, cur.y + 2, cur.z)) continue;
+        const k = `${nx},${ny},${nz}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        queue.push({ x: nx, y: ny, z: nz });
+        break; // primeiro apoio encontrado nesta direção
+      }
+    }
+  }
+  return seen;
+}
+
+// Pontos que precisam ser alcançáveis, em coordenadas locais (y relativo ao piso).
+const INTERIORES = {
+  cabana: [[3, 1, 3]],
+  palafita: [[3, 4, 3]],
+  torre: [[2, 1, 2], [2, 11, 2]],   // térreo e a sacada, subindo pela escada
+  roca: [[4, 1, 3]],
+  sobrado: [[4, 1, 4], [4, 5, 4]],  // térreo e o andar de cima
+};
+
+for (const kind of STRUCTURE_KINDS) {
+  test(`${kind}: dá para entrar vindo de fora`, () => {
+    const { world, floor } = flatWorld(40, 64);
+    const origin = { x: 20, y: floor, z: 20 };
+    build(world, kind, origin);
+
+    const alvos = INTERIORES[kind];
+    if (!alvos) return;   // poço não tem interior habitável, só o buraco
+
+    const start = { x: origin.x + 4, y: floor, z: origin.z - 12 };  // do lado de fora
+    assert(standable(world, start.x, start.y, start.z), 'ponto de partida inválido');
+    const vistos = reachable(world, start);
+
+    for (const [lx, ly, lz] of alvos) {
+      const k = `${origin.x + lx},${origin.y + ly},${origin.z + lz}`;
+      assert(vistos.has(k), `não se chega a (${lx},${ly},${lz}) de dentro da ${kind}`);
+    }
+  });
+}
+
+test('poço: o buraco fica aberto e tem fundo', () => {
+  const { world, floor } = flatWorld(40, 64);
+  const origin = { x: 20, y: floor, z: 20 };
+  build(world, 'poco', origin);
+  assert(!world.isSolid(origin.x + 2, origin.y, origin.z + 2), 'boca do poço tapada');
+  assert(!world.isSolid(origin.x + 2, origin.y - 2, origin.z + 2), 'poço sem profundidade');
+  assert(world.isSolid(origin.x + 2, origin.y - 4, origin.z + 2), 'poço sem fundo');
+});
+
+test('toda construção tem vão de porta de 2 blocos', () => {
+  for (const kind of STRUCTURE_KINDS) {
+    const plan = planStructure(kind, seeded(3));
+    if (!plan.door) continue;
+    const { world, floor } = flatWorld(40, 64);
+    const origin = { x: 20, y: floor, z: 20 };
+    build(world, kind, origin, seeded(3));
+    const dx = origin.x + plan.door.x;
+    const dz = origin.z + plan.door.z;
+    // Anda da porta para dentro procurando o vão: ele está a 1 ou 2 células.
+    let achou = false;
+    for (let step = 0; step <= 4 && !achou; step++) {
+      for (let dy = 0; dy <= 6; dy++) {
+        const y = origin.y + dy;
+        if (!world.isSolid(dx, y, dz + step) && !world.isSolid(dx, y + 1, dz + step)
+          && world.isSolid(dx, y - 1, dz + step)) { achou = true; break; }
+      }
+    }
+    assert(achou, `${kind}: não achei vão de 2 blocos na porta`);
+  }
+});
+
+test('nenhuma construção enterra o interior em bloco sólido', () => {
+  for (const kind of STRUCTURE_KINDS) {
+    const alvos = INTERIORES[kind];
+    if (!alvos) continue;
+    const { world, floor } = flatWorld(40, 64);
+    const origin = { x: 20, y: floor, z: 20 };
+    build(world, kind, origin);
+    for (const [lx, ly, lz] of alvos) {
+      assert(standable(world, origin.x + lx, origin.y + ly, origin.z + lz),
+        `${kind}: (${lx},${ly},${lz}) não é lugar de ficar de pé`);
+    }
+  }
+});
+
+// --- a aldeia -------------------------------------------------------------
+
+test('a aldeia não empilha construção em cima de construção', () => {
+  const { world } = flatWorld(40, 96);
+  const aldeia = new Village(world, { x: 8.5, z: 8.5 }, seeded(11));
+  const feitas = [];
+  for (let i = 0; i < MAX_STRUCTURES * 3; i++) {
+    const job = aldeia.planNear(40 + (i % 5) * 6, 40 + (i % 7) * 5);
+    if (job) feitas.push(job);
+  }
+  assert(aldeia.structures.length > 1, `só ${aldeia.structures.length} construção`);
+  assertEqual(aldeia.structures.length <= MAX_STRUCTURES, true, 'passou do teto');
+  for (let i = 0; i < aldeia.structures.length; i++) {
+    for (let j = i + 1; j < aldeia.structures.length; j++) {
+      const a = aldeia.structures[i].bounds;
+      const b = aldeia.structures[j].bounds;
+      const sobrepoe = a.x0 <= b.x1 && b.x0 <= a.x1 && a.z0 <= b.z1 && b.z0 <= a.z1;
+      assert(!sobrepoe, `construções ${i} e ${j} se sobrepõem`);
+    }
+  }
+});
+
+test('a aldeia respeita o espaço do spawn do jogador', () => {
+  const { world } = flatWorld(40, 96);
+  const spawn = { x: 8.5, z: 8.5 };
+  const aldeia = new Village(world, spawn, seeded(5));
+  for (let i = 0; i < 20; i++) aldeia.planNear(spawn.x, spawn.z);
+  for (const s of aldeia.structures) {
+    const cx = (s.bounds.x0 + s.bounds.x1) / 2;
+    const cz = (s.bounds.z0 + s.bounds.z1) / 2;
+    assert(Math.hypot(cx - spawn.x, cz - spawn.z) >= 7, 'construção em cima do spawn');
+  }
+});
+
+test('a obra é progressiva e termina exatamente igual à planta', () => {
+  const { world, floor } = flatWorld(40, 64);
+  const origin = { x: 20, y: floor, z: 20 };
+  const plan = planStructure('cabana', seeded(9));
+  const job = new BuildJob(world, origin, plan);
+
+  assert(job.total > 100, `obra pequena demais: ${job.total} blocos`);
+  let ticks = 0;
+  while (!job.done && ticks < 10000) { job.step(1 / 60); ticks++; }
+  assert(ticks > 30, `a obra terminou em ${ticks} frames — não é progressiva`);
+
+  for (const [x, y, z, id] of plan.blocks) {
+    assertEqual(world.getBlock(origin.x + x, origin.y + y, origin.z + z), id,
+      `bloco (${x},${y},${z}) da planta`);
+  }
+});
+
+test('a obra preenche o alicerce quando o terreno é irregular', () => {
+  const { world, floor } = flatWorld(40, 64);
+  // cava um degrau dentro do sítio
+  for (let x = 20; x < 26; x++) for (let z = 20; z < 24; z++) world.setBlock(x, floor - 1, z, Blocks.AIR);
+  const origin = { x: 20, y: floor, z: 20 };
+  const job = new BuildJob(world, origin, planStructure('cabana', seeded(9)));
+  while (!job.done) job.step(1);
+  assert(world.isSolid(22, floor - 1, 22), 'ficou buraco sob a construção');
+});

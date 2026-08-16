@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Preview das construções</title>
+  <style>
+    body { background: #7fb356; margin: 0; font: 13px sans-serif; color: #fff; }
+    canvas { display: block; margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <canvas id="out" width="1500" height="900"></canvas>
+  <script type="module">
+    import { planStructure, STRUCTURE_KINDS } from '../js/world/structures.js';
+
+    // Isométrico simples: cada bloco é um losango de topo e duas laterais.
+    // Serve para conferir volume, telhado, porta e escada sem precisar de GPU.
+    const TW = 14, TH = 7, TZ = 12;   // meia-largura, meia-profundidade, altura
+    const CORES = {
+      1: ['#6ba338', '#527f2a', '#456e22'],   // grama
+      2: ['#8a6242', '#6d4d34', '#5c412b'],   // terra
+      3: ['#9a9ca4', '#7c7e85', '#6b6d73'],   // pedra
+      4: ['#e2d4a0', '#c2b586', '#a89d74'],   // areia
+      5: ['#9a652a', '#7c5122', '#68431c'],   // madeira
+      6: ['#2e6e28', '#255820', '#1f4a1b'],   // folhas
+    };
+
+    const ctx = document.getElementById('out').getContext('2d');
+
+    function bloco(cx, cy, x, y, z, id) {
+      const [topo, lado, frente] = CORES[id] || ['#f0f', '#c0c', '#909'];
+      const sx = cx + (x - z) * TW;
+      const sy = cy + (x + z) * TH - y * TZ;
+      ctx.fillStyle = topo;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy - TH); ctx.lineTo(sx + TW, sy);
+      ctx.lineTo(sx, sy + TH); ctx.lineTo(sx - TW, sy);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = lado;
+      ctx.beginPath();
+      ctx.moveTo(sx - TW, sy); ctx.lineTo(sx, sy + TH);
+      ctx.lineTo(sx, sy + TH + TZ); ctx.lineTo(sx - TW, sy + TZ);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = frente;
+      ctx.beginPath();
+      ctx.moveTo(sx + TW, sy); ctx.lineTo(sx, sy + TH);
+      ctx.lineTo(sx, sy + TH + TZ); ctx.lineTo(sx + TW, sy + TZ);
+      ctx.closePath(); ctx.fill();
+    }
+
+    function desenha(kind, cx, cy) {
+      const plan = planStructure(kind, () => 0.5);
+      const solidos = plan.blocks.filter(([, , , id]) => id !== 0);
+      // Pintor: do fundo para a frente, de baixo para cima.
+      solidos.sort((a, b) => (a[0] + a[2] + a[1] * 0.5) - (b[0] + b[2] + b[1] * 0.5));
+      for (const [x, y, z, id] of solidos) bloco(cx, cy, x, y, z, id);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 18px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`${kind} (${solidos.length} blocos)`, cx, cy + 120);
+    }
+
+    const pos = [[250, 260], [700, 260], [1150, 300], [250, 640], [700, 660], [1150, 700]];
+    STRUCTURE_KINDS.forEach((k, i) => desenha(k, pos[i][0], pos[i][1]));
+  </script>
+</body>
+</html>

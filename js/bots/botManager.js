@@ -5,6 +5,7 @@
 
 import { moveEntity } from '../player/physics.js';
 import { Bot } from './bot.js';
+import { Village } from './village.js';
 
 const ROSTER = [
   { name: 'Ana', color: 0xcc3333 },  // vermelho
@@ -21,6 +22,9 @@ export class BotManager {
   constructor(scene, world, count) {
     this.world = world;
     this.bots = [];
+    // A aldeia é compartilhada: é ela que impede dois bots de levantarem casas
+    // uma dentro da outra, e é nela que ficam as portas que todos visitam.
+    this.village = new Village(world, SPAWN_CENTER);
 
     for (let i = 0; i < count; i++) {
       const ang = (i / count) * Math.PI * 2;
@@ -30,7 +34,7 @@ export class BotManager {
       const y = surf === -1 ? FALLBACK_Y : surf + 1;
 
       const { name, color } = ROSTER[i % ROSTER.length];
-      const bot = new Bot(name, color, { x, y, z });
+      const bot = new Bot(name, color, { x, y, z }, Math.random, this.village);
 
       // Escalonamento round-robin: offsets espalhados dentro do intervalo.
       bot.thinkTimer = (THINK_INTERVAL * i) / count;
@@ -42,6 +46,12 @@ export class BotManager {
   }
 
   update(dt, playerPos) {
+    // Quem está de pé no mundo agora: obra nenhuma assenta bloco em cima deles.
+    const ocupantes = [
+      { pos: playerPos, width: 0.6, height: 1.8 },
+      ...this.bots,
+    ];
+
     for (const bot of this.bots) {
       bot.sinceThink += dt;
       bot.thinkTimer -= dt;
@@ -53,6 +63,7 @@ export class BotManager {
 
       bot.steer(this.world, playerPos);
       moveEntity(this.world, bot, dt);
+      bot.build(dt, ocupantes);
       bot.syncMesh(dt);
     }
   }

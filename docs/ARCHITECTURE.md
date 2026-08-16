@@ -174,7 +174,20 @@ Boneco humanoide segmentado: cabeça 8×8×8, tronco 8×12×4, braços e pernas 
 Pele, cabelo, calça, sapato, olhar e padrão da roupa saem de um hash do **nome** — o mesmo nome dá sempre o mesmo boneco, entre sessões e máquinas, como o resto do projeto evita `Math.random`. A camisa vem do `color` do roster. `animate` faz a passada acompanhar a velocidade real (sem patinar), morrer quando o bot para, dar respiração e olhada no idle, e levantar os braços no ar. A fase inicial é aleatória por bot para não marcharem em sincronia.
 
 Para conferir a skin sem GPU: `dev/preview-avatar.html` desenha as próprias texturas do avatar numa vista ortográfica de frente e de costas.
-FSM: `idle` (2–4s) → `wander` (escolhe ponto a até 12 blocos, steering na direção, pula se `onGround` e bloqueado à frente, desiste após ~6s) → `follow` (se jogador a <10 blocos, 30% de chance ao decidir; para a 2 blocos). Spawn: em círculo de raio ~10 ao redor do spawn do jogador, em `world.surfaceHeight + 1`. Nomes fixos: Ana, Beto, Caio. O mesh é orientado na direção do movimento.
+### village.js e world/structures.js — as construções
+```js
+export function planStructure(kind, rnd)  // -> { kind, w, d, door, blocks: [[x,y,z,id]] }
+export const STRUCTURE_KINDS              // cabana, palafita, torre, poco, roca, sobrado
+export class Village { planNear(x, z) -> BuildJob|null; nearestDoor(x, z, max); structures }
+export class BuildJob { step(dt, occupants) -> done; standPoint; progress }
+```
+`structures.js` é **puro** (sem THREE, world ou DOM): descreve blocos em coordenadas locais, com `y = 0` no piso. `blocks` traz o AR primeiro e os sólidos de baixo para cima — limpa-se o volume (uma árvore no meio arruinaria o interior) e depois monta-se, na ordem em que um pedreiro monta.
+
+**A regra que manda em todas é caber gente dentro.** Vão de porta de 2 blocos, teto interno de 2, e degrau nunca maior que 1: o jogador tem 1,8 e sobe 1 bloco pulando, e o bot só pula quando há bloco à frente com 2 livres acima. Escada de 2 em 2 tranca os dois do lado de fora, e construção em que não se entra é cenário, não casa. Três defeitos que os testes pegaram e que valem como aviso: escada externa montada ao contrário, primeiro degrau do caracol tapando a porta, e alçapão de uma célula só deixando o fim da escada espremido sob a sacada.
+
+`Village` guarda o que já existe: impede sítios sobrepostos (`SITE_MIN_DIST`), deixa `SPAWN_CLEAR` livre em volta do spawn, respeita `MAX_STRUCTURES` e mede o desnível do retângulo inteiro (`MAX_SLOPE`) antes de aprovar o terreno. `BuildJob` assenta `BLOCKS_PER_SECOND` blocos e preenche o alicerce descendo célula a célula atrás de apoio — **não** por `surfaceHeight`, que numa coluna com árvore devolve o topo da copa. Bloco que cairia sobre uma entidade viva volta para o fim da fila: sem isso a obra emparedava quem estivesse na soleira, inclusive o próprio pedreiro.
+
+FSM: `idle` (2–4s) → `build` (procura sítio; sem terreno, volta a vaguear) → `visit` (vai à porta e **entra**, porque parar na soleira é ficar de fora) → `wander` (escolhe ponto a até 12 blocos, steering na direção, pula se `onGround` e bloqueado à frente, desiste após ~6s) → `follow` (se jogador a <10 blocos, 30% de chance ao decidir; para a 2 blocos). Spawn: em círculo de raio ~10 ao redor do spawn do jogador, em `world.surfaceHeight + 1`. Nomes fixos: Ana, Beto, Caio. O mesh é orientado na direção do movimento.
 
 ## Boot (js/main.js — já escrito, frentes não tocam)
 
