@@ -29,9 +29,15 @@ python3 -m http.server 8080
 | Shift | correr |
 | Mouse esq. | quebrar bloco |
 | Mouse dir. | colocar bloco |
-| 1–6 | escolher bloco do hotbar |
+| 1–7 | escolher bloco do hotbar (7 = água) |
 | V | alternar 1ª pessoa → 3ª pessoa → 3ª de frente |
+| Espaço (na água) | nadar para cima |
 | ESC | soltar o mouse |
+
+**Piscinas.** A água é o único bloco que não é parede: você atravessa nadando.
+Cave um buraco, encha com o bloco 7 e pule dentro — lá dentro a queda é lenta e
+o Espaço sobe. A mira acerta a água, então dá para esvaziar a piscina quebrando
+bloco por bloco.
 
 Em 3ª pessoa você se vê: o boneco do jogador é o Heitor — moletom preto de
 zíper, bermuda clara, tênis escuros e as luvas de boxe vermelhas.
@@ -47,6 +53,11 @@ caracol e sacada, poço, roça cercada e sobrado de dois andares. A obra é asse
 Todas as construções são habitáveis: porta de 2 blocos, pé-direito de 2 e degraus de 1 — você
 entra, sobe as escadas e chega à sacada da torre e ao andar de cima do sobrado. Os bots também
 entram nelas.
+
+A aldeia nasce **em volta do seu spawn**, num raio de 22 blocos: o primeiro canteiro abre em
+poucos segundos e a primeira casa fica pronta em torno de meio minuto, sem você precisar sair
+procurando. O que é seu ninguém mexe — nem você derruba a casa dos bots, nem eles assentam bloco
+por cima do que você construiu ou cavou.
 
 ## Arquitetura
 

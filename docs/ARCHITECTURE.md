@@ -49,7 +49,9 @@ export class World {
   ownerOf(wx, wy, wz)           // Owner.NONE | PLAYER | BOT
   canEdit(wx, wy, wz, by)       // a célula é livre ou já é de `by`?
   setBlock(wx, wy, wz, id, by)  // escreve, marca `by` como dono, queueDiff, dirty; -> boolean
-  isSolid(wx, wy, wz)           // id !== AIR (todos os blocos v1 são sólidos)
+  isSolid(wx, wy, wz)           // barra passagem: nem AIR nem WATER
+  isWater(wx, wy, wz)           // há água nesta célula
+  isTargetable(wx, wy, wz)      // há qualquer bloco: o que a mira acerta
   surfaceHeight(wx, wz)         // y do primeiro bloco sólido de cima p/ baixo, -1 se nenhum
   dirty                         // Set<chunkKey> de chunks a re-meshear; consumidor faz clear
 }
@@ -208,7 +210,20 @@ export class BuildJob { step(dt, occupants) -> done; standPoint; progress }
 
 **A regra que manda em todas é caber gente dentro.** Vão de porta de 2 blocos, teto interno de 2, e degrau nunca maior que 1: o jogador tem 1,8 e sobe 1 bloco pulando, e o bot só pula quando há bloco à frente com 2 livres acima. Escada de 2 em 2 tranca os dois do lado de fora, e construção em que não se entra é cenário, não casa. Três defeitos que os testes pegaram e que valem como aviso: escada externa montada ao contrário, primeiro degrau do caracol tapando a porta, e alçapão de uma célula só deixando o fim da escada espremido sob a sacada.
 
-`Village` guarda o que já existe: impede sítios sobrepostos (`SITE_MIN_DIST`), deixa `SPAWN_CLEAR` livre em volta do spawn, respeita `MAX_STRUCTURES` e mede o desnível do retângulo inteiro (`MAX_SLOPE`) antes de aprovar o terreno. `BuildJob` assenta `BLOCKS_PER_SECOND` blocos e preenche o alicerce descendo célula a célula atrás de apoio — **não** por `surfaceHeight`, que numa coluna com árvore devolve o topo da copa. Bloco que cairia sobre uma entidade viva volta para o fim da fila: sem isso a obra emparedava quem estivesse na soleira, inclusive o próprio pedreiro.
+`Village` guarda o que já existe: impede sítios sobrepostos (`SITE_MIN_DIST`), deixa `SPAWN_CLEAR` livre em volta do spawn, respeita `MAX_STRUCTURES` e mede o desnível do retângulo inteiro (`MAX_SLOPE`) antes de aprovar o terreno. `BuildJob` assenta `BLOCKS_PER_SECOND` blocos e preenche o alicerce descendo célula a célula atrás de apoio — **não** por `surfaceHeight`, que numa coluna com árvore devolve o topo da copa.
+
+**A aldeia mora perto do spawn.** `VILLAGE_RADIUS` é o teto; `_searchCenter` puxa o centro de busca para dentro de metade desse raio antes de sortear o sítio. O bot pede obra de onde ele está, e ele vagueia — sem a correção a aldeia se espalhava atrás dele e nascia a 40 ou 50 blocos, que foi queixa real de quem jogou. A folga do spawn mede a **beirada** da construção (uma casa larga centrada a 7 tem parede a 3); o raio da aldeia mede o centro. Quem caminha até o canteiro é o bot.
+
+**Obra que não termina é pior que obra torta.** Bloco que cairia sobre uma entidade viva volta para o fim da fila — mas só `ADIAMENTOS_MAX` vezes; depois é assentado e quem estava ali sobe para cima dele. Sem esse limite, alguém parado no lugar congelava a casa para sempre, e o culpado mais comum era o próprio pedreiro: `standPoint` agora fica fora de **toda** a planta (`footprint`), não só à frente da porta, porque varanda, beiral e o primeiro degrau avançam além da soleira. O registro da construção guarda o `job`, e `built` são as prontas — antes a aldeia dava por construída uma casa no instante em que o sítio era escolhido, e mandava bot visitar canteiro vazio.
+
+### Água (`Blocks.WATER`)
+
+Primeiro bloco que não é parede, e por isso toca em quatro lugares que perguntavam "é AIR?":
+
+- **`isSolid`** exclui a água, então física, raycast padrão e a busca de apoio do alicerce a atravessam. `surfaceHeight` também a ignora: ela devolve a altura do **chão**, e é dela que saem o spawn e o piso das construções — casa assentada na superfície de um lago não fica de pé.
+- **A mira** usa um predicado próprio (`isTargetable`) e acerta a água; sem isso o clique atravessava a piscina e ia bater no fundo, e não haveria como esvaziá-la. A saída de emergência da origem do raycast continua olhando só para sólido: ela existe para o olho preso dentro de geometria, e se respondesse à água quem estivesse nadando miraria a própria célula a cada clique.
+- **O mesher** devolve duas geometrias, `opaque` e `water`. Sólido contra água emite face (é a parede da piscina vista de dentro); água contra ar emite; água contra água ou contra sólido, não. O material da água é translúcido, `DoubleSide` e **sem `depthWrite`** — com profundidade escrita, a face da frente apagava a de trás e o volume virava uma chapa azul.
+- **A física** dá empuxo: `WATER_GRAVITY`, `WATER_SINK` e `WATER_DRAG` em `physics.js`, e o Espaço vira `SWIM_UP` enquanto `inWater` — pulo só sai do chão, nadar não.
 
 FSM: `idle` (2–4s) → `build` (procura sítio; sem terreno, volta a vaguear) → `visit` (vai à porta e **entra**, porque parar na soleira é ficar de fora) → `wander` (escolhe ponto a até 12 blocos, steering na direção, pula se `onGround` e bloqueado à frente, desiste após ~6s) → `follow` (se jogador a <10 blocos, 30% de chance ao decidir; para a 2 blocos). Spawn: em círculo de raio ~10 ao redor do spawn do jogador, em `world.surfaceHeight + 1`. Nomes fixos: Ana, Beto, Caio. O mesh é orientado na direção do movimento.
 

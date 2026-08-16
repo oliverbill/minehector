@@ -22,6 +22,7 @@ const Cells = {
   SAND: 4,
   WOOD: 5,
   LEAVES: 6,
+  WATER: 7,
 };
 
 // Ruído determinístico em [0, 1) por pixel — sem Math.random.
@@ -56,6 +57,7 @@ const STONE = [138, 140, 148];
 const SAND = [226, 212, 160];
 const WOOD = [154, 101, 42];
 const LEAVES = [46, 110, 40];
+const WATER = [56, 116, 200];
 
 export function createAtlas() {
   const canvas = document.createElement('canvas');
@@ -124,6 +126,16 @@ export function createAtlas() {
     px(ctx, Cells.LEAVES, x, y, LEAVES, shade);
   });
 
+  // Água — azul com ondulação em faixas horizontais e brilhos esparsos. O
+  // padrão é horizontal de propósito: a face que mais se olha é a de cima, e
+  // faixa deitada lê como superfície de água; ruído solto leria como pedra azul.
+  drawCell(ctx, Cells.WATER, (x, y) => {
+    const onda = Math.sin((x + y * 0.6) * 0.9) * 0.5 + 0.5;
+    const brilho = hash2(x, y, 81) > 0.94;
+    const shade = brilho ? 46 : -14 + onda * 26;
+    px(ctx, Cells.WATER, x, y, WATER, shade);
+  });
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.magFilter = THREE.NearestFilter;
   texture.minFilter = THREE.NearestFilter;
@@ -143,6 +155,7 @@ export function createAtlas() {
       case Blocks.SAND: return Cells.SAND;
       case Blocks.WOOD: return Cells.WOOD;
       case Blocks.LEAVES: return Cells.LEAVES;
+      case Blocks.WATER: return Cells.WATER;
       default: return Cells.DIRT;
     }
   };

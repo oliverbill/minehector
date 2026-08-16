@@ -26,7 +26,7 @@ test('os bots levantam construções sozinhos, no terreno gerado', () => {
 
 test('a obra sai do chão: os blocos vão parar no mundo', () => {
   const { world, bots } = simular(180);
-  const s = bots.village.structures[0];
+  const s = bots.village.built[0] || bots.village.structures[0];
   assert(s, 'nenhuma construção para conferir');
   let solidos = 0;
   for (let x = s.bounds.x0; x <= s.bounds.x1; x++) {
@@ -68,7 +68,12 @@ test('os bots visitam as construções prontas', () => {
 
 test('o piso das construções tem apoio embaixo (nada flutuando)', () => {
   const { world, bots } = simular(180);
-  for (const s of bots.village.structures) {
+  // Só obra PRONTA. Casa a meio caminho tem buraco por definição — e, quando um
+  // bloco é adiado por ter alguém em cima dele, ele vai para o fim da fila e é
+  // assentado depois dos de cima. Conferir no meio disso reprovava construção
+  // que ficaria perfeita segundos depois.
+  assert(bots.village.built.length > 0, 'nenhuma construção terminou a tempo');
+  for (const s of bots.village.built) {
     for (let x = s.bounds.x0; x <= s.bounds.x1; x++) {
       for (let z = s.bounds.z0; z <= s.bounds.z1; z++) {
         // Só onde há piso. O poço é um buraco de propósito, e exigir chão sob

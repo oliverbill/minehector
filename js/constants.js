@@ -16,7 +16,14 @@ export const Blocks = {
   SAND: 4,
   WOOD: 5,
   LEAVES: 6,
+  WATER: 7,
 };
+
+// A água é o primeiro bloco que não é parede: atravessa-se nadando, e por isso
+// `isSolid` a trata como vazio. Ela ainda é bloco para tudo o mais — ocupa a
+// célula, tem textura, é colocada e quebrada, e a mira acerta nela.
+export const isWater = (id) => id === Blocks.WATER;
+export const isSolidBlock = (id) => id !== Blocks.AIR && id !== Blocks.WATER;
 
 // De quem é cada célula editada. Quem escreve numa célula passa a ser dono dela,
 // e só o dono escreve de novo ali: é o que impede o jogador de derrubar a casa
@@ -32,7 +39,7 @@ export const Owner = {
 };
 
 // Nome exibido no hotbar, indexado pelo id do bloco
-export const BLOCK_NAMES = ['Ar', 'Grama', 'Terra', 'Pedra', 'Areia', 'Madeira', 'Folhas'];
+export const BLOCK_NAMES = ['Ar', 'Grama', 'Terra', 'Pedra', 'Areia', 'Madeira', 'Folhas', 'Água'];
 
 export const WORLD_SEED = 1337;
 

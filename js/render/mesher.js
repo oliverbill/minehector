@@ -1,9 +1,20 @@
 // Mesher de chunk — função pura, sem THREE, sem DOM (testável em Node).
-// Emite uma face somente quando o vizinho na direção dela é AIR (culling).
 // Posições em coordenadas de MUNDO. 4 vértices + 2 triângulos por face,
 // winding counter-clockwise visto de fora (padrão do Three.js).
+//
+// Duas malhas por chunk, não uma: a opaca e a da água. A água é translúcida e
+// tem de ser desenhada depois do resto, com material próprio — misturada na
+// mesma geometria, ou o fundo da piscina sumia atrás dela, ou ela virava um
+// bloco azul opaco.
+//
+// Culling, agora com três casos em vez de um:
+//   - sólido contra AR ou contra ÁGUA -> emite (é a parede da piscina vista de
+//     dentro d'água; sem isto o fundo do buraco ficava transparente);
+//   - água contra AR -> emite (a superfície e as laterais expostas);
+//   - água contra água ou contra sólido -> não emite (nada de plano interno
+//     dentro do volume de água, que só produziria faces piscando).
 
-import { CHUNK_SIZE, CHUNK_HEIGHT, Blocks } from '../constants.js';
+import { CHUNK_SIZE, CHUNK_HEIGHT, Blocks, isWater } from '../constants.js';
 
 // Tabela das 6 direções. Cada corner: [ox, oy, oz, cu, cv] (offsets 0/1 no cubo
 // e coordenada UV local dentro do retângulo da célula; cv=1 é o topo da textura).
@@ -66,12 +77,23 @@ const FACES = [
   },
 ];
 
+function buffer() {
+  return { positions: [], normals: [], uvs: [], indices: [], vertCount: 0 };
+}
+
+function freeze(b) {
+  return {
+    positions: new Float32Array(b.positions),
+    normals: new Float32Array(b.normals),
+    uvs: new Float32Array(b.uvs),
+    indices: new Uint32Array(b.indices),
+  };
+}
+
+/** @returns {{opaque: object, water: object}} — duas geometrias prontas. */
 export function buildChunkMesh(getBlock, cx, cz, uvRect) {
-  const positions = [];
-  const normals = [];
-  const uvs = [];
-  const indices = [];
-  let vertCount = 0;
+  const opaque = buffer();
+  const water = buffer();
 
   const baseX = cx * CHUNK_SIZE;
   const baseZ = cz * CHUNK_SIZE;
@@ -85,33 +107,33 @@ export function buildChunkMesh(getBlock, cx, cz, uvRect) {
         const id = getBlock(wx, wy, wz);
         if (id === Blocks.AIR) continue;
 
+        const souAgua = isWater(id);
+        const b = souAgua ? water : opaque;
+
         for (const face of FACES) {
           const [dx, dy, dz] = face.dir;
-          if (getBlock(wx + dx, wy + dy, wz + dz) !== Blocks.AIR) continue;
+          const viz = getBlock(wx + dx, wy + dy, wz + dz);
+          const vizinhoVazio = viz === Blocks.AIR || (!souAgua && isWater(viz));
+          if (!vizinhoVazio) continue;
 
           const rect = uvRect(id, face.kind);
           const du = rect.u1 - rect.u0;
           const dv = rect.v1 - rect.v0;
 
           for (const [ox, oy, oz, cu, cv] of face.corners) {
-            positions.push(wx + ox, wy + oy, wz + oz);
-            normals.push(dx, dy, dz);
-            uvs.push(rect.u0 + cu * du, rect.v0 + cv * dv);
+            b.positions.push(wx + ox, wy + oy, wz + oz);
+            b.normals.push(dx, dy, dz);
+            b.uvs.push(rect.u0 + cu * du, rect.v0 + cv * dv);
           }
-          indices.push(
-            vertCount, vertCount + 1, vertCount + 2,
-            vertCount, vertCount + 2, vertCount + 3,
+          b.indices.push(
+            b.vertCount, b.vertCount + 1, b.vertCount + 2,
+            b.vertCount, b.vertCount + 2, b.vertCount + 3,
           );
-          vertCount += 4;
+          b.vertCount += 4;
         }
       }
     }
   }
 
-  return {
-    positions: new Float32Array(positions),
-    normals: new Float32Array(normals),
-    uvs: new Float32Array(uvs),
-    indices: new Uint32Array(indices),
-  };
+  return { opaque: freeze(opaque), water: freeze(water) };
 }

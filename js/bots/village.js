@@ -9,11 +9,20 @@ import { planStructure, STRUCTURE_KINDS, footprint } from '../world/structures.j
 import { Blocks, Owner } from '../constants.js';
 
 export const MAX_STRUCTURES = 6;    // teto por sessão, para a aldeia não virar cidade
-export const SITE_MIN_DIST = 11;    // blocos entre construções
+export const SITE_MIN_DIST = 7;     // blocos entre construções
 export const SPAWN_CLEAR = 7;       // raio livre em torno do spawn do jogador
+// A aldeia inteira cabe neste raio em volta do spawn. Sem o teto, cada bot
+// construía onde estivesse quando deu vontade — e como eles vagueiam, as casas
+// nasciam a 40 ou 50 blocos, longe demais para quem só quer ver a obra acontecer.
+export const VILLAGE_RADIUS = 22;
 export const BLOCKS_PER_SECOND = 9; // ritmo de assentamento
 const FOUNDATION_DEPTH = 10;        // até onde o alicerce desce atrás de apoio
-const SITE_TRIES = 40;
+const ADIAMENTOS_MAX = 40;          // voltas que um bloco espera quem está no caminho
+// Muitas tentativas de propósito: o raio da aldeia é apertado, e cada recusa
+// (desnível, vizinha perto demais, coisa do jogador) come um candidato. Com 40 a
+// aldeia parava na metade das casas por falta de sorteio, não por falta de lugar.
+// É um laço de aritmética que roda só quando um bot decide construir.
+const SITE_TRIES = 160;
 const MAX_SLOPE = 2;                // desnível tolerado no terreno do sítio
 
 /** A célula [c, c+1)³ toca a AABB de alguma entidade? */
@@ -64,12 +73,20 @@ export class BuildJob {
   get done() { return this.queue.length === 0; }
   get progress() { return this.total === 0 ? 1 : 1 - this.queue.length / this.total; }
 
-  /** Ponto onde o bot fica enquanto trabalha: à frente da porta, do lado de fora. */
+  /**
+   * Ponto onde o bot fica enquanto trabalha: à frente da porta e FORA de toda a
+   * planta, não apenas fora da porta.
+   *
+   * Ficar a 1,5 bloco da soleira parecia bastar, mas varanda, beiral e o primeiro
+   * degrau da escada avançam para além dela — e o pedreiro acabava plantado em
+   * cima de uma célula que ele mesmo precisava assentar. O bloco era adiado, ele
+   * não saía do lugar, e a casa ficava eternamente em obra.
+   */
   get standPoint() {
     const door = this.plan.door;
     const dx = door ? door.x : Math.floor(this.plan.w / 2);
-    const dz = door ? door.z : -1;
-    return { x: this.origin.x + dx + 0.5, z: this.origin.z + dz - 1.5 };
+    const fp = footprint(this.plan);
+    return { x: this.origin.x + dx + 0.5, z: this.origin.z + fp.z0 - 1.5 };
   }
 
   /**
@@ -92,8 +109,17 @@ export class BuildJob {
       const wy = this.origin.y + y;
       const wz = this.origin.z + z;
       if (id !== Blocks.AIR && occupiedBy(occupants, wx, wy, wz)) {
-        this.queue.push(item);   // depois, quando quem está ali tiver saído
-        continue;
+        // Adiar é a cortesia; adiar para sempre é a obra parada. Depois de
+        // ADIAMENTOS_MAX voltas, o bloco é assentado e quem estava ali sobe para
+        // cima dele. Uma pessoa parada na soleira não pode congelar uma casa.
+        item[4] = (item[4] || 0) + 1;
+        if (item[4] <= ADIAMENTOS_MAX) {
+          this.queue.push(item);   // depois, quando quem está ali tiver saído
+          continue;
+        }
+        for (const e of occupants) {
+          if (e && e.pos && occupiedBy([e], wx, wy, wz)) e.pos.y = wy + 1;
+        }
       }
       // Célula do jogador é intocável, e ao contrário do caso acima não adianta
       // esperar: ele não vai sair dali. O bloco é descartado e a obra segue com
@@ -114,24 +140,44 @@ export class Village {
 
   get full() { return this.structures.length >= MAX_STRUCTURES; }
 
-  /** Porta mais próxima de (x,z) dentro de `maxDist`, em coordenadas de mundo. */
+  /** As construções que já ficaram prontas. */
+  get built() {
+    return this.structures.filter((s) => s.job.done);
+  }
+
+  /**
+   * Porta mais próxima de (x,z) dentro de `maxDist`, em coordenadas de mundo.
+   * Só de casa pronta: mandar um bot visitar obra pela metade é mandá-lo entrar
+   * por um vão que ainda vai virar parede.
+   */
   nearestDoor(x, z, maxDist) {
     let best = null;
     let bestD = maxDist;
     for (const s of this.structures) {
-      if (!s.door) continue;
+      if (!s.door || !s.job.done) continue;
       const d = Math.hypot(s.door.x - x, s.door.z - z);
       if (d < bestD) { bestD = d; best = s.door; }
     }
     return best;
   }
 
-  /** Nenhuma célula da planta, posta em `origin`, é do jogador? */
+  /**
+   * A planta, posta em `origin`, atropelaria alguma coisa do jogador?
+   *
+   * Só conta conflito de verdade: célula dele onde a obra quer assentar bloco,
+   * ou bloco dele onde a obra quer vazio. Recusar por qualquer célula dele era
+   * demais — quem quebra grama andando por aí vira dono de dezenas de células de
+   * ar, e a planta limpa um volume enorme de ar antes de montar. O resultado era
+   * a aldeia fugir para longe de quem mais joga, que foi exatamente a queixa.
+   */
   _clearOfPlayer(plan, origin) {
-    for (const [x, y, z] of plan.blocks) {
-      if (this.world.ownerOf(origin.x + x, origin.y + y, origin.z + z) === Owner.PLAYER) {
-        return false;
-      }
+    for (const [x, y, z, id] of plan.blocks) {
+      const wx = origin.x + x;
+      const wy = origin.y + y;
+      const wz = origin.z + z;
+      if (this.world.ownerOf(wx, wy, wz) !== Owner.PLAYER) continue;
+      const querVazio = id === Blocks.AIR;
+      if (!querVazio || this.world.isSolid(wx, wy, wz)) return false;
     }
     return true;
   }
@@ -146,6 +192,21 @@ export class Village {
   }
 
   /**
+   * Centro de busca de sítio, puxado para perto do spawn. O bot pede obra onde
+   * ele está, e ele vagueia; sem esta correção a aldeia se espalhava atrás dele
+   * mundo afora. Ele caminha até o canteiro depois — andar é com o bot, não com
+   * o jogador.
+   */
+  _searchCenter(cx, cz) {
+    const dx = cx - this.spawn.x;
+    const dz = cz - this.spawn.z;
+    const d = Math.hypot(dx, dz);
+    const limite = VILLAGE_RADIUS * 0.5;
+    if (d <= limite || d === 0) return { x: cx, z: cz };
+    return { x: this.spawn.x + (dx / d) * limite, z: this.spawn.z + (dz / d) * limite };
+  }
+
+  /**
    * Procura terreno para uma construção nova perto de (cx,cz). Devolve a obra
    * pronta para começar, ou null se não achou lugar — o que é comum em terreno
    * quebrado, e por isso o bot volta a vaguear em vez de insistir.
@@ -155,19 +216,28 @@ export class Village {
     const kind = STRUCTURE_KINDS[Math.floor(this.rnd() * STRUCTURE_KINDS.length)];
     const plan = planStructure(kind, this.rnd);
     const fp = footprint(plan);
+    const centro = this._searchCenter(cx, cz);
 
     for (let t = 0; t < SITE_TRIES; t++) {
       const ang = this.rnd() * Math.PI * 2;
-      const dist = 8 + this.rnd() * 14;
-      const ox = Math.round(cx + Math.cos(ang) * dist);
-      const oz = Math.round(cz + Math.sin(ang) * dist);
+      const dist = 6 + this.rnd() * 10;
+      const ox = Math.round(centro.x + Math.cos(ang) * dist);
+      const oz = Math.round(centro.z + Math.sin(ang) * dist);
 
       const bounds = { x0: ox + fp.x0, z0: oz + fp.z0, x1: ox + fp.x1, z1: oz + fp.z1 };
 
       // Longe do spawn: casa em cima de quem acabou de entrar no jogo é armadilha.
-      const near = Math.hypot((bounds.x0 + bounds.x1) / 2 - this.spawn.x,
+      // Perto do spawn: a aldeia toda tem de caber num passeio curto.
+      //
+      // A folga do spawn mede a BEIRADA da construção, e o raio da aldeia mede o
+      // centro. Medir os dois pelo centro deixava a parede de uma casa larga cair
+      // a 3 blocos do spawn, com a folga de 7 satisfeita no papel.
+      const bx = Math.max(bounds.x0 - this.spawn.x, this.spawn.x - bounds.x1, 0);
+      const bz = Math.max(bounds.z0 - this.spawn.z, this.spawn.z - bounds.z1, 0);
+      if (Math.hypot(bx, bz) < SPAWN_CLEAR) continue;
+      const centro2 = Math.hypot((bounds.x0 + bounds.x1) / 2 - this.spawn.x,
         (bounds.z0 + bounds.z1) / 2 - this.spawn.z);
-      if (near < SPAWN_CLEAR) continue;
+      if (centro2 > VILLAGE_RADIUS) continue;
       if (!this._freeOf(bounds)) continue;
 
       // Terreno: mede o desnível de todo o retângulo, não só dos cantos.
@@ -203,8 +273,12 @@ export class Village {
           },
         }
         : null;
-      this.structures.push({ kind, origin, door, bounds });
-      return new BuildJob(this.world, origin, plan);
+      // A obra fica guardada com o registro: é o que separa casa pronta de
+      // canteiro de obra. Sem isso a aldeia dava por construída uma casa no
+      // instante em que o sítio era escolhido, antes do primeiro bloco.
+      const job = new BuildJob(this.world, origin, plan);
+      this.structures.push({ kind, origin, door, bounds, job });
+      return job;
     }
     return null;
   }

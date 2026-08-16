@@ -44,7 +44,19 @@ export class ChunkRenderer {
     this.world = world;
     this.uvRect = atlas.uvRect;
     this.material = new THREE.MeshLambertMaterial({ map: atlas.texture });
-    this.meshes = new Map(); // chunkKey -> THREE.Mesh
+    // Água: translúcida, desenhada depois de tudo e sem escrever profundidade —
+    // com depthWrite ligado, a face da frente da piscina apagava a de trás e o
+    // volume virava uma chapa azul. DoubleSide para a superfície continuar
+    // visível de baixo, para quem está dentro d'água.
+    this.waterMaterial = new THREE.MeshLambertMaterial({
+      map: atlas.texture,
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this.meshes = new Map();      // chunkKey -> THREE.Mesh (opaco)
+    this.waterMeshes = new Map(); // chunkKey -> THREE.Mesh (água)
   }
 
   update(playerPos) {
@@ -64,13 +76,15 @@ export class ChunkRenderer {
     }
 
     // 2) Remover + dispose de chunks além de RENDER_RADIUS+1.
-    for (const [key, mesh] of this.meshes) {
-      const [cx, cz] = key.split(',').map(Number);
-      const dist = Math.max(Math.abs(cx - pcx), Math.abs(cz - pcz));
-      if (dist > RENDER_RADIUS + 1) {
-        this.scene.remove(mesh);
-        mesh.geometry.dispose();
-        this.meshes.delete(key);
+    for (const mapa of [this.meshes, this.waterMeshes]) {
+      for (const [key, mesh] of mapa) {
+        const [cx, cz] = key.split(',').map(Number);
+        const dist = Math.max(Math.abs(cx - pcx), Math.abs(cz - pcz));
+        if (dist > RENDER_RADIUS + 1) {
+          this.scene.remove(mesh);
+          mesh.geometry.dispose();
+          mapa.delete(key);
+        }
       }
     }
 
@@ -94,6 +108,23 @@ export class ChunkRenderer {
   _meshChunk(cx, cz, key) {
     const getBlock = (wx, wy, wz) => this.world.getBlock(wx, wy, wz);
     const data = buildChunkMesh(getBlock, cx, cz, this.uvRect);
+    this._apply(key, data.opaque, this.meshes, this.material, 0);
+    this._apply(key, data.water, this.waterMeshes, this.waterMaterial, 1);
+  }
+
+  // Instala (ou atualiza, ou remove) a malha de um chunk num dos dois mapas.
+  // Remover quando fica vazia importa: quebrar a última água de um chunk tem de
+  // apagar a malha de água, senão a piscina apagada continua na tela.
+  _apply(key, data, mapa, material, renderOrder) {
+    const existing = mapa.get(key);
+    if (data.indices.length === 0) {
+      if (existing) {
+        this.scene.remove(existing);
+        existing.geometry.dispose();
+        mapa.delete(key);
+      }
+      return;
+    }
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
@@ -102,15 +133,15 @@ export class ChunkRenderer {
     geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
     geometry.computeBoundingSphere();
 
-    const existing = this.meshes.get(key);
     if (existing) {
       existing.geometry.dispose();
       existing.geometry = geometry;
     } else {
-      const mesh = new THREE.Mesh(geometry, this.material);
+      const mesh = new THREE.Mesh(geometry, material);
       mesh.frustumCulled = true;
+      mesh.renderOrder = renderOrder;
       this.scene.add(mesh);
-      this.meshes.set(key, mesh);
+      mapa.set(key, mesh);
     }
   }
 }

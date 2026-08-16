@@ -2,7 +2,9 @@
 // edição de blocos com registro de diff e marcação de chunks dirty
 // (incluindo vizinhos — diagonais — quando o bloco editado está na borda).
 
-import { CHUNK_SIZE, CHUNK_HEIGHT, blockIndex, Blocks, chunkKey, Owner } from '../constants.js';
+import {
+  CHUNK_SIZE, CHUNK_HEIGHT, blockIndex, Blocks, chunkKey, Owner, isSolidBlock,
+} from '../constants.js';
 import { generateChunk } from './worldgen.js';
 import { queueDiff } from './storage.js';
 
@@ -113,12 +115,26 @@ export class World {
     chunkOwners.set(idx, by);
   }
 
-  /** true se o bloco não é AIR (todos os blocos v1 são sólidos). */
+  /** true se o bloco barra passagem. Água ocupa a célula mas não barra. */
   isSolid(wx, wy, wz) {
+    return isSolidBlock(this.getBlock(wx, wy, wz));
+  }
+
+  /** true se há água nesta célula. */
+  isWater(wx, wy, wz) {
+    return this.getBlock(wx, wy, wz) === Blocks.WATER;
+  }
+
+  /** true se há qualquer bloco aqui — o que a mira acerta, água inclusive. */
+  isTargetable(wx, wy, wz) {
     return this.getBlock(wx, wy, wz) !== Blocks.AIR;
   }
 
-  /** y do primeiro bloco sólido de cima p/ baixo; -1 se a coluna é toda AIR. */
+  /**
+   * y do primeiro bloco sólido de cima p/ baixo; -1 se a coluna não tem nenhum.
+   * Água não conta: isto é a altura do CHÃO, e é dela que saem o spawn e o piso
+   * das construções — casa assentada sobre a superfície de um lago não fica.
+   */
   surfaceHeight(wx, wz) {
     const cx = Math.floor(wx / CHUNK_SIZE);
     const cz = Math.floor(wz / CHUNK_SIZE);
@@ -126,7 +142,7 @@ export class World {
     const lz = wz - cz * CHUNK_SIZE;
     const data = this.getChunk(cx, cz);
     for (let y = CHUNK_HEIGHT - 1; y >= 0; y--) {
-      if (data[blockIndex(lx, y, lz)] !== Blocks.AIR) return y;
+      if (isSolidBlock(data[blockIndex(lx, y, lz)])) return y;
     }
     return -1;
   }

@@ -7,7 +7,10 @@
 import { test, assert, assertEqual } from './tiny-test.mjs';
 import { flatWorld, Blocks } from './harness.mjs';
 import { planStructure, STRUCTURE_KINDS, footprint } from '../js/world/structures.js';
-import { Village, BuildJob, MAX_STRUCTURES } from '../js/bots/village.js';
+import {
+  Village, BuildJob, MAX_STRUCTURES, SPAWN_CLEAR, VILLAGE_RADIUS,
+} from '../js/bots/village.js';
+import { Owner } from '../js/constants.js';
 
 // rng determinístico para o teste não depender da sorte
 function seeded(seed) {
@@ -161,11 +164,80 @@ test('a aldeia respeita o espaço do spawn do jogador', () => {
   const spawn = { x: 8.5, z: 8.5 };
   const aldeia = new Village(world, spawn, seeded(5));
   for (let i = 0; i < 20; i++) aldeia.planNear(spawn.x, spawn.z);
+  assert(aldeia.structures.length > 0, 'não planejou nada para conferir');
+  for (const s of aldeia.structures) {
+    // Beirada, não centro: uma casa larga com o centro a 7 tem parede a 3.
+    const bx = Math.max(s.bounds.x0 - spawn.x, spawn.x - s.bounds.x1, 0);
+    const bz = Math.max(s.bounds.z0 - spawn.z, spawn.z - s.bounds.z1, 0);
+    assert(Math.hypot(bx, bz) >= SPAWN_CLEAR, 'construção encostando no spawn');
+  }
+});
+
+test('a aldeia fica ao alcance de uma caminhada, mesmo com o bot longe', () => {
+  const { world } = flatWorld(40, 160);
+  const spawn = { x: 8.5, z: 8.5 };
+  const aldeia = new Village(world, spawn, seeded(9));
+
+  // O bot pede obra lá do fim do mundo: é o caso real, porque eles vagueiam.
+  // Antes disto a casa nascia junto do bot e o jogador tinha de caçá-la.
+  for (let i = 0; i < 40; i++) aldeia.planNear(spawn.x + 70, spawn.z + 70);
+
+  assert(aldeia.structures.length > 0, 'nenhuma obra planejada');
   for (const s of aldeia.structures) {
     const cx = (s.bounds.x0 + s.bounds.x1) / 2;
     const cz = (s.bounds.z0 + s.bounds.z1) / 2;
-    assert(Math.hypot(cx - spawn.x, cz - spawn.z) >= 7, 'construção em cima do spawn');
+    const d = Math.hypot(cx - spawn.x, cz - spawn.z);
+    assert(d <= VILLAGE_RADIUS, `construção a ${Math.round(d)} blocos do spawn`);
   }
+});
+
+test('a obra termina mesmo com alguém plantado em cima dela', () => {
+  const { world, floor } = flatWorld(40, 64);
+  const origin = { x: 20, y: floor, z: 20 };
+  const plan = planStructure('cabana', seeded(3));
+  const job = new BuildJob(world, origin, plan);
+
+  // Um teimoso parado bem no meio da planta, que nunca sai. Antes, o bloco
+  // debaixo dele voltava para o fim da fila eternamente e a casa não ficava
+  // pronta nunca — inclusive quando o teimoso era o próprio pedreiro.
+  const teimoso = { pos: { x: origin.x + 2.5, y: origin.y, z: origin.z + 2.5 }, width: 0.6, height: 1.8 };
+  const yInicial = teimoso.pos.y;
+  for (let i = 0; i < 4000 && !job.done; i++) job.step(1 / 60, [teimoso]);
+
+  assert(job.done, `obra parada com ${job.queue.length} blocos na fila`);
+  assert(teimoso.pos.y > yInicial, 'o teimoso não foi posto por cima do bloco assentado');
+});
+
+test('o pedreiro não fica em cima da própria planta', () => {
+  const { world, floor } = flatWorld(40, 64);
+  for (const kind of STRUCTURE_KINDS) {
+    const plan = planStructure(kind, seeded(4));
+    const origin = { x: 20, y: floor, z: 20 };
+    const job = new BuildJob(world, origin, plan);
+    const p = job.standPoint;
+    const fp = footprint(plan);
+    const lz = Math.floor(p.z) - origin.z;
+    assert(lz < fp.z0, `${kind}: o pedreiro para em z local ${lz}, dentro da planta (z0=${fp.z0})`);
+  }
+});
+
+test('buraco cavado pelo jogador não espanta a obra do lugar', () => {
+  const { world, floor } = flatWorld(40, 96);
+  const spawn = { x: 8.5, z: 8.5 };
+
+  // Quem joga quebra grama por onde anda: dezenas de células de ar viram dele.
+  // Isso não pode custar o sítio, senão a aldeia foge de quem mais joga.
+  for (let x = -20; x <= 40; x++) {
+    for (let z = -20; z <= 40; z++) {
+      if ((x + z) % 3) continue;
+      world.setBlock(x, floor - 1, z, Blocks.AIR, Owner.PLAYER);
+    }
+  }
+
+  const aldeia = new Village(world, spawn, seeded(9));
+  for (let i = 0; i < 40; i++) aldeia.planNear(spawn.x, spawn.z);
+  assert(aldeia.structures.length >= 3,
+    `só ${aldeia.structures.length} sítios num terreno onde o jogador só cavou`);
 });
 
 test('a obra é progressiva e termina exatamente igual à planta', () => {

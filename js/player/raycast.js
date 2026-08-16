@@ -1,7 +1,18 @@
 // Raycast em grade de voxels — DDA de Amanatides & Woo.
 // Função pura: sem THREE, sem DOM. `dir` deve estar normalizado; maxDist em blocos.
+//
+// `hits` decide o que o raio acerta; o padrão é bloco sólido. A mira passa um
+// predicado mais largo, que inclui a água — sem isso não haveria como apagar a
+// água de uma piscina, já que ela não é sólida.
+//
+// A saída de emergência da origem continua olhando só para SÓLIDO de propósito:
+// ela existe para o olho preso dentro de geometria, e água não prende ninguém.
+// Se ela respondesse à água, quem estivesse nadando miraria a própria célula a
+// cada clique e não conseguiria acertar mais nada.
 
-export function raycastVoxel(world, origin, dir, maxDist) {
+const HITS_SOLID = (world, x, y, z) => world.isSolid(x, y, z);
+
+export function raycastVoxel(world, origin, dir, maxDist, hits = HITS_SOLID) {
   let x = Math.floor(origin.x);
   let y = Math.floor(origin.y);
   let z = Math.floor(origin.z);
@@ -47,7 +58,7 @@ export function raycastVoxel(world, origin, dir, maxDist) {
       z += stepZ; t = tMaxZ; tMaxZ += tDeltaZ; nz = -stepZ;
     }
     if (t > maxDist) return null;
-    if (world.isSolid(x, y, z)) {
+    if (hits(world, x, y, z)) {
       return {
         block: { x, y, z },
         prev: { x: x + nx, y: y + ny, z: z + nz },

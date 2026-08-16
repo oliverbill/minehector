@@ -1,7 +1,7 @@
 // Jogador em primeira pessoa. Movimento WASD relativo ao yaw, pulo, corrida.
 // Convenção Three.js: rotation.order 'YXZ', yaw em torno de Y, olhar para -Z
 // quando yaw = 0 — direção horizontal do olhar = (-sin(yaw), -cos(yaw)).
-import { moveEntity } from './physics.js';
+import { moveEntity, inWater, SWIM_UP } from './physics.js';
 
 const WALK_SPEED = 4.3;   // blocos/s
 const RUN_SPEED = 5.6;
@@ -57,8 +57,11 @@ export class Player {
       this.vel.z = 0;
     }
 
-    if (input.isDown('Space') && this.onGround) {
-      this.vel.y = JUMP_SPEED;
+    // Na água, o espaço nada para cima enquanto estiver segurado — não é pulo,
+    // que só sai do chão. É assim que se sobe de volta do fundo da piscina.
+    if (input.isDown('Space')) {
+      if (inWater(this.world, this)) this.vel.y = SWIM_UP;
+      else if (this.onGround) this.vel.y = JUMP_SPEED;
     }
 
     moveEntity(this.world, this, dt);

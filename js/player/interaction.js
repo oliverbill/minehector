@@ -8,6 +8,10 @@ import { raycastVoxel } from './raycast.js';
 // terreno que desce à frente — o chão ficava a 5,07 e o clique não fazia nada.
 const REACH = 6;
 
+// A mira acerta qualquer bloco, não só os sólidos: a água é bloco, e sem isto o
+// clique atravessava a piscina e ia bater no fundo dela.
+const HITS_BLOCK = (world, x, y, z) => world.isTargetable(x, y, z);
+
 export class Interaction {
   constructor(world, player, scene, input) {
     this.world = world;
@@ -54,9 +58,9 @@ export class Interaction {
     });
 
     input.onKeyPress((code) => {
-      const match = /^Digit([1-6])$/.exec(code);
+      const match = /^Digit([1-7])$/.exec(code);
       if (!match) return;
-      this.selectedBlock = Number(match[1]); // Digit1..Digit6 -> ids 1..6
+      this.selectedBlock = Number(match[1]); // Digit1..Digit7 -> ids 1..7
       for (const slot of document.querySelectorAll('#hotbar .slot')) {
         slot.classList.toggle('active', Number(slot.dataset.block) === this.selectedBlock);
       }
@@ -140,7 +144,7 @@ export class Interaction {
       y: Math.sin(this.player.pitch),
       z: cosP * -Math.cos(this.player.yaw),
     };
-    const hit = raycastVoxel(this.world, eye, dir, REACH);
+    const hit = raycastVoxel(this.world, eye, dir, REACH, HITS_BLOCK);
     this._target = hit;
     this._dir = dir; // guardado com o alvo: a colocação precisa saber onde se mirou
 
