@@ -8,13 +8,21 @@
 import { planStructure, STRUCTURE_KINDS, footprint } from '../world/structures.js';
 import { Blocks, Owner } from '../constants.js';
 
-export const MAX_STRUCTURES = 6;    // teto por sessão, para a aldeia não virar cidade
-export const SITE_MIN_DIST = 7;     // blocos entre construções
+// A aldeia é uma lista de pendências, não um sorteio: uma de cada, e acabou.
+// Assim o jogador vê as SEIS — cabana, palafita, torre, poço, roça e sobrado —
+// em vez de três torres e dois poços, que era o que o sorteio uniforme dava.
+export const MAX_STRUCTURES = STRUCTURE_KINDS.length;
+export const SITE_MIN_DIST = 4;     // blocos entre construções (é uma vila, não um condomínio)
 export const SPAWN_CLEAR = 7;       // raio livre em torno do spawn do jogador
 // A aldeia inteira cabe neste raio em volta do spawn. Sem o teto, cada bot
 // construía onde estivesse quando deu vontade — e como eles vagueiam, as casas
 // nasciam a 40 ou 50 blocos, longe demais para quem só quer ver a obra acontecer.
-export const VILLAGE_RADIUS = 22;
+export const VILLAGE_RADIUS = 16;
+// Teto de folga para um tipo teimoso. O sobrado é a maior planta e exige um
+// retângulo grande e plano; dentro de 16 blocos ele quase nunca achava lugar e
+// simplesmente não era construído. Cada recusa afrouxa o raio DELE um pouco,
+// até este limite — melhor um sobrado a 24 blocos do que sobrado nenhum.
+export const VILLAGE_RADIUS_MAX = 34;
 export const BLOCKS_PER_SECOND = 9; // ritmo de assentamento
 const FOUNDATION_DEPTH = 10;        // até onde o alicerce desce atrás de apoio
 const ADIAMENTOS_MAX = 40;          // voltas que um bloco espera quem está no caminho
@@ -24,14 +32,10 @@ const ADIAMENTOS_MAX = 40;          // voltas que um bloco espera quem está no 
 // É um laço de aritmética que roda só quando um bot decide construir.
 const SITE_TRIES = 60;
 // Poço e roça são pequenos, e pequeno cabe em quase todo terreno. Ficam por
-// último na escolha do tipo, E entram no máximo uma vez cada.
-//
-// Só a ordem não bastava: depois de duas casas o raio da aldeia fica apertado
-// para plantas grandes, e daí em diante só o poço cabia — a aldeia terminava
-// com três poços e duas casas. Uma aldeia tem um poço e uma horta; o resto são
-// casas, e é melhor construir menos do que encher o quintal de poço.
+// último na fila dos pendentes: à sorte, o poço saía primeiro quase sempre, e a
+// primeira coisa que o jogador via era um buraco no chão em vez de uma casa.
 const PEQUENAS = new Set(['poco', 'roca']);
-const LIMITE_PEQUENAS = 1;
+
 const MAX_SLOPE = 2;                // desnível tolerado no terreno do sítio
 
 /** A célula [c, c+1)³ toca a AABB de alguma entidade? */
@@ -165,7 +169,8 @@ export class Village {
     this.world = world;
     this.spawn = spawn;
     this.rnd = rnd;
-    this.structures = [];           // { kind, origin, door: {x,z}, bounds }
+    this.structures = [];           // { kind, origin, door: {x,z}, bounds, job }
+    this._fails = new Map();        // tipo -> quantas vezes não achou lugar
   }
 
   get full() { return this.structures.length >= MAX_STRUCTURES; }
@@ -173,6 +178,29 @@ export class Village {
   /** As construções que já ficaram prontas. */
   get built() {
     return this.structures.filter((s) => s.job.done);
+  }
+
+  /**
+   * Construção mais próxima de (x,z), com a distância. Obra em andamento tem
+   * preferência sobre casa pronta: o que vale a pena andar até lá para ver é o
+   * bloco sendo assentado, não a parede parada.
+   *
+   * Existe para a HUD apontar o caminho. Cinco casas a quinze blocos dentro de
+   * uma floresta são invisíveis do spawn, e "não estou vendo as construções" foi
+   * queixa antes de ser hipótese.
+   */
+  nearest(x, z) {
+    let melhor = null;
+    for (const s of this.structures) {
+      const d = Math.hypot(s.origin.x - x, s.origin.z - z);
+      const emObra = !s.job.done;
+      if (!melhor
+        || (emObra && !melhor.emObra)
+        || (emObra === melhor.emObra && d < melhor.dist)) {
+        melhor = { kind: s.kind, dist: d, emObra, origin: s.origin };
+      }
+    }
+    return melhor;
   }
 
   /**
@@ -229,7 +257,7 @@ export class Village {
    * dividir célula nenhuma e ainda assim ficarem encavaladas.
    */
   _botWorkNear(bounds, y) {
-    const m = Math.ceil(SITE_MIN_DIST / 2);
+    const m = 2;
     for (let x = bounds.x0 - m; x <= bounds.x1 + m; x++) {
       for (let z = bounds.z0 - m; z <= bounds.z1 + m; z++) {
         for (let dy = -1; dy <= 3; dy++) {
@@ -264,25 +292,22 @@ export class Village {
     return { x: this.spawn.x + (dx / d) * limite, z: this.spawn.z + (dz / d) * limite };
   }
 
+  /** Tipos que ainda faltam nesta aldeia. */
+  get pending() {
+    const feitos = new Set(this.structures.map((s) => s.kind));
+    return STRUCTURE_KINDS.filter((kind) => !feitos.has(kind));
+  }
+
   /**
-   * Ordem em que os tipos são tentados. Duas regras, e as duas nasceram da
-   * mesma queixa — "só vi uma construção, e bem simples":
+   * Ordem em que os tipos pendentes são tentados: casa antes de poço e roça.
    *
-   *   1. tipo ainda não construído vem antes de repetição. Sorteio uniforme
-   *      dava três poços numa aldeia de quatro;
-   *   2. entre os inéditos, casa vem antes de poço e roça. O poço é o menor de
-   *      todos e por isso o que mais passa nos testes de terreno — sem esta
-   *      regra ele ganhava quase sempre, e a aldeia virava um campo de poços.
+   * O poço é o menor de todos e por isso o que mais passa nos testes de terreno.
+   * Deixado à sorte, ele saía primeiro quase sempre, e a primeira coisa que o
+   * jogador via era um buraco no chão em vez de uma casa.
    */
   _kindOrder() {
-    const quantos = new Map();
-    for (const s of this.structures) quantos.set(s.kind, (quantos.get(s.kind) || 0) + 1);
-    return [...STRUCTURE_KINDS]
-      .filter((kind) => !PEQUENAS.has(kind) || (quantos.get(kind) || 0) < LIMITE_PEQUENAS)
-      .map((kind) => ({
-        kind,
-        peso: (quantos.has(kind) ? 10 : 0) + (PEQUENAS.has(kind) ? 2 : 0) + this.rnd(),
-      }))
+    return this.pending
+      .map((kind) => ({ kind, peso: (PEQUENAS.has(kind) ? 2 : 0) + this.rnd() }))
       .sort((a, b) => a.peso - b.peso)
       .map((o) => o.kind);
   }
@@ -300,18 +325,28 @@ export class Village {
     for (const kind of this._kindOrder()) {
       const job = this._trySite(kind, cx, cz);
       if (job) return job;
+      // Recusa contada por tipo: é ela que vai afrouxando o raio de quem não
+      // acha lugar, para o sobrado não ficar de fora da aldeia para sempre.
+      this._fails.set(kind, (this._fails.get(kind) || 0) + 1);
     }
     return null;
+  }
+
+  /** Raio permitido para este tipo, que cresce a cada recusa acumulada. */
+  _radiusFor(kind) {
+    const recusas = this._fails.get(kind) || 0;
+    return Math.min(VILLAGE_RADIUS + recusas, VILLAGE_RADIUS_MAX);
   }
 
   _trySite(kind, cx, cz) {
     const plan = planStructure(kind, this.rnd);
     const fp = footprint(plan);
     const centro = this._searchCenter(cx, cz);
+    const raio = this._radiusFor(kind);
 
     for (let t = 0; t < SITE_TRIES; t++) {
       const ang = this.rnd() * Math.PI * 2;
-      const dist = 6 + this.rnd() * 10;
+      const dist = 6 + this.rnd() * Math.max(4, raio - 6);
       const ox = Math.round(centro.x + Math.cos(ang) * dist);
       const oz = Math.round(centro.z + Math.sin(ang) * dist);
 
@@ -328,7 +363,7 @@ export class Village {
       if (Math.hypot(bx, bz) < SPAWN_CLEAR) continue;
       const centro2 = Math.hypot((bounds.x0 + bounds.x1) / 2 - this.spawn.x,
         (bounds.z0 + bounds.z1) / 2 - this.spawn.z);
-      if (centro2 > VILLAGE_RADIUS) continue;
+      if (centro2 > raio) continue;
       if (!this._freeOf(bounds)) continue;
 
       // Terreno: mede o desnível de todo o retângulo, não só dos cantos.

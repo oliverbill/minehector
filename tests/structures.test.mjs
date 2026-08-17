@@ -8,7 +8,7 @@ import { test, assert, assertEqual } from './tiny-test.mjs';
 import { flatWorld, Blocks } from './harness.mjs';
 import { planStructure, STRUCTURE_KINDS, footprint } from '../js/world/structures.js';
 import {
-  Village, BuildJob, MAX_STRUCTURES, SPAWN_CLEAR, VILLAGE_RADIUS,
+  Village, BuildJob, MAX_STRUCTURES, SPAWN_CLEAR, VILLAGE_RADIUS, VILLAGE_RADIUS_MAX,
 } from '../js/bots/village.js';
 import { Owner } from '../js/constants.js';
 
@@ -187,8 +187,57 @@ test('a aldeia fica ao alcance de uma caminhada, mesmo com o bot longe', () => {
     const cx = (s.bounds.x0 + s.bounds.x1) / 2;
     const cz = (s.bounds.z0 + s.bounds.z1) / 2;
     const d = Math.hypot(cx - spawn.x, cz - spawn.z);
-    assert(d <= VILLAGE_RADIUS, `construção a ${Math.round(d)} blocos do spawn`);
+    // VILLAGE_RADIUS_MAX e não VILLAGE_RADIUS: o tipo que não acha lugar dentro
+    // do raio normal vai afrouxando o dele, senão o sobrado — a maior planta —
+    // simplesmente não é construído. O teto continua sendo uma caminhada curta.
+    assert(d <= VILLAGE_RADIUS_MAX, `construção a ${Math.round(d)} blocos do spawn`);
   }
+});
+
+test('a aldeia levanta uma de cada: as seis, sem repetir', () => {
+  const { world } = flatWorld(40, 200);
+  const spawn = { x: 8.5, z: 8.5 };
+  const aldeia = new Village(world, spawn, seeded(31));
+  for (let i = 0; i < 200 && !aldeia.full; i++) aldeia.planNear(spawn.x, spawn.z);
+
+  const tipos = aldeia.structures.map((s) => s.kind);
+  assertEqual(tipos.length, STRUCTURE_KINDS.length, `saíram ${tipos.length}: ${tipos.join(', ')}`);
+  assertEqual(new Set(tipos).size, tipos.length, `tipo repetido: ${tipos.join(', ')}`);
+  for (const kind of STRUCTURE_KINDS) {
+    assert(tipos.includes(kind), `faltou ${kind} — o jogador pediu todas`);
+  }
+  assertEqual(aldeia.pending.length, 0, 'sobrou pendência com a aldeia cheia');
+});
+
+test('a bússola aponta a construção mais próxima, e prefere a que está em obra', () => {
+  const { world } = flatWorld(40, 200);
+  const spawn = { x: 8.5, z: 8.5 };
+  const aldeia = new Village(world, spawn, seeded(33));
+
+  assertEqual(aldeia.nearest(spawn.x, spawn.z), null, 'apontou algo numa aldeia vazia');
+
+  const jobs = [];
+  for (let i = 0; i < 200 && !aldeia.full; i++) {
+    const j = aldeia.planNear(spawn.x, spawn.z);
+    if (j) jobs.push(j);
+  }
+  assert(aldeia.structures.length >= 2, 'poucas construções para comparar');
+
+  // Termina todas menos a última: a bússola tem de apontar a que ficou em obra,
+  // ainda que outra esteja mais perto — o que vale ver é o bloco sendo assentado.
+  for (const j of jobs.slice(0, -1)) for (let i = 0; i < 4000 && !j.done; i++) j.step(1, []);
+  const emObra = aldeia.structures[aldeia.structures.length - 1];
+  const alvo = aldeia.nearest(spawn.x, spawn.z);
+  assert(alvo.emObra, 'apontou casa pronta havendo obra em andamento');
+  assertEqual(alvo.kind, emObra.kind, 'apontou a obra errada');
+
+  // Com tudo pronto, volta a valer a distância.
+  for (const j of jobs) for (let i = 0; i < 4000 && !j.done; i++) j.step(1, []);
+  const depois = aldeia.nearest(spawn.x, spawn.z);
+  const maisPerto = aldeia.structures
+    .map((s) => Math.hypot(s.origin.x - spawn.x, s.origin.z - spawn.z))
+    .sort((a, b) => a - b)[0];
+  assert(Math.abs(depois.dist - maisPerto) < 1e-9, 'não apontou a mais próxima');
 });
 
 test('a aldeia é feita de casas, não de um campo de poços', () => {

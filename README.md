@@ -54,10 +54,14 @@ Todas as construções são habitáveis: porta de 2 blocos, pé-direito de 2 e d
 entra, sobe as escadas e chega à sacada da torre e ao andar de cima do sobrado. Os bots também
 entram nelas.
 
-A aldeia nasce **em volta do seu spawn**, num raio de 22 blocos: o primeiro canteiro abre em
+A aldeia nasce **em volta do seu spawn**: o primeiro canteiro abre em
 poucos segundos e a primeira casa fica pronta em torno de meio minuto, sem você precisar sair
-procurando. O que é seu ninguém mexe — nem você derruba a casa dos bots, nem eles assentam bloco
-por cima do que você construiu ou cavou.
+procurando. Sai **uma de cada**: as seis construções, sem repetir, a maioria entre 10 e 20 blocos
+(o sobrado, que é o maior, pode ir um pouco mais longe atrás de terreno plano). A linha amarela
+da HUD aponta a construção mais próxima, diz a que distância está e quantas ainda faltam.
+
+O que é seu ninguém mexe — nem você derruba a casa dos bots, nem eles assentam bloco por cima
+do que você construiu ou cavou.
 
 ## Arquitetura
 

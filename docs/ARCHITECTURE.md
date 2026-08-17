@@ -78,10 +78,10 @@ Texturas 16×16 desenhadas por código (fillRect + ruído de tom): grama topo ve
 ### mesher.js
 ```js
 export function buildChunkMesh(getBlock, cx, cz, uvRect)
-// -> { positions: Float32Array, normals: Float32Array, uvs: Float32Array, indices: Uint32Array }
+// -> { opaque: G, water: G }, cada G = { positions, normals, uvs, indices } (TypedArrays)
 // getBlock(wx, wy, wz) é um closure (cobre vizinhos de outros chunks)
 ```
-Face culling: emite face só se o vizinho na direção dela for AIR. 4 vértices + 2 triângulos por face. Posições em coordenadas de MUNDO (não locais). Sem greedy meshing no v1.
+Duas geometrias porque a água é translúcida e precisa de material próprio e ordem de desenho própria (ver "Água"). Face culling em três casos: sólido contra AR **ou contra água** emite; água contra ar emite; água contra água ou contra sólido, não. 4 vértices + 2 triângulos por face. Posições em coordenadas de MUNDO (não locais). Sem greedy meshing no v1.
 
 ### renderer.js
 ```js
@@ -122,10 +122,11 @@ AABB: `[pos.x ± width/2, pos.y .. pos.y+height, pos.z ± width/2]`. Compartilha
 
 ### raycast.js
 ```js
-export function raycastVoxel(world, origin, dir, maxDist)
+export function raycastVoxel(world, origin, dir, maxDist, hits?)
 // -> { block: {x,y,z}, prev: {x,y,z}, normal: {x,y,z}, t } | null
+// hits(world, x, y, z) decide o que o raio acerta; o padrão é bloco sólido
 ```
-DDA (Amanatides & Woo). `block` = primeiro sólido atingido; `prev` = célula anterior (candidata a receber o bloco); `t` = distância até a face, para quem precisa do ponto mirado (`origin + dir*t`) e não só da célula.
+DDA (Amanatides & Woo). `block` = primeiro acerto; `prev` = célula anterior (candidata a receber o bloco); `t` = distância até a face, para quem precisa do ponto mirado (`origin + dir*t`) e não só da célula. A mira passa um `hits` que inclui a água (ver "Água").
 
 ### player.js
 ```js
@@ -211,6 +212,8 @@ export class BuildJob { step(dt, occupants) -> done; standPoint; progress }
 **A regra que manda em todas é caber gente dentro.** Vão de porta de 2 blocos, teto interno de 2, e degrau nunca maior que 1: o jogador tem 1,8 e sobe 1 bloco pulando, e o bot só pula quando há bloco à frente com 2 livres acima. Escada de 2 em 2 tranca os dois do lado de fora, e construção em que não se entra é cenário, não casa. Três defeitos que os testes pegaram e que valem como aviso: escada externa montada ao contrário, primeiro degrau do caracol tapando a porta, e alçapão de uma célula só deixando o fim da escada espremido sob a sacada.
 
 `Village` guarda o que já existe: impede sítios sobrepostos (`SITE_MIN_DIST`), deixa `SPAWN_CLEAR` livre em volta do spawn, respeita `MAX_STRUCTURES` e mede o desnível do retângulo inteiro (`MAX_SLOPE`) antes de aprovar o terreno. `BuildJob` assenta `BLOCKS_PER_SECOND` blocos e preenche o alicerce descendo célula a célula atrás de apoio — **não** por `surfaceHeight`, que numa coluna com árvore devolve o topo da copa.
+
+**A aldeia é uma lista de pendências.** `MAX_STRUCTURES` é o número de tipos: sai **uma de cada**, nunca repetida, e `pending` diz o que falta. O sorteio uniforme anterior dava três poços numa aldeia de quatro — o poço é a menor planta e por isso a que mais passa nos testes de terreno. `_kindOrder` põe casa antes de poço e roça, e `planNear` tenta os pendentes em ordem: antes, um tipo azarado custava a obra inteira daquela decisão. O tipo que não acha lugar acumula recusa em `_fails` e vai afrouxando o **próprio** raio, de `VILLAGE_RADIUS` até `VILLAGE_RADIUS_MAX`; sem isso o sobrado, que exige o maior retângulo plano, simplesmente não era construído. `nearest(x, z)` alimenta a bússola da HUD e prefere obra em andamento a casa pronta.
 
 **A aldeia mora perto do spawn.** `VILLAGE_RADIUS` é o teto; `_searchCenter` puxa o centro de busca para dentro de metade desse raio antes de sortear o sítio. O bot pede obra de onde ele está, e ele vagueia — sem a correção a aldeia se espalhava atrás dele e nascia a 40 ou 50 blocos, que foi queixa real de quem jogou. A folga do spawn mede a **beirada** da construção (uma casa larga centrada a 7 tem parede a 3); o raio da aldeia mede o centro. Quem caminha até o canteiro é o bot.
 

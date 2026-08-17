@@ -21,7 +21,12 @@ export const FOLLOW_STOP = 2;     // blocos: para de avançar
 export const FOLLOW_LOSE = 14;    // blocos: abandona o follow
 export const WALK_SPEED = 3.5;    // blocos/s
 export const JUMP_SPEED = 8.5;    // blocos/s (vel.y ao pular)
-export const BUILD_CHANCE = 0.35; // chance de começar uma obra, se houver lugar
+// Chance de começar uma obra ao sair do ocioso. Era 0,35, e com seis tipos para
+// levantar a aldeia não ficava pronta enquanto alguém tinha paciência de olhar:
+// os bots passavam a maior parte do tempo vagueando. Enquanto houver tipo
+// pendente eles preferem trabalhar; depois de tudo construído voltam à vida de
+// antes, que é o que dá o que ver quando não há mais obra.
+export const BUILD_CHANCE = 0.7;
 export const VISIT_CHANCE = 0.35; // chance de ir visitar uma construção pronta
 export const VISIT_RANGE = 30;    // blocos: até onde procura uma porta
 export const VISIT_ARRIVE = 1.0;  // blocos: chegou à porta / ao meio da casa

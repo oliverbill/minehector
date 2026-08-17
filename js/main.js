@@ -47,7 +47,19 @@ async function boot() {
 
   const fpsEl = document.getElementById('fps');
   const posEl = document.getElementById('pos');
+  const aldeiaEl = document.getElementById('aldeia');
   let fpsAcc = 0, fpsFrames = 0;
+
+  // Seta para a construção mais próxima, relativa a para onde você está olhando.
+  // Cinco casas a quinze blocos dentro de uma floresta são invisíveis do spawn.
+  const SETAS = ['↑', '↗', '→', '↘', '↓', '↙', '←', '↖'];
+  function seta(alvoX, alvoZ) {
+    // Ângulo do alvo menos o ângulo do olhar. Yaw 0 é olhar para -Z, e é por
+    // isso que a conta usa (-dz) como "para a frente".
+    const ang = Math.atan2(alvoX - player.pos.x, -(alvoZ - player.pos.z)) - player.yaw;
+    const i = Math.round(((ang % (2 * Math.PI)) + 2 * Math.PI) / (Math.PI / 4)) % 8;
+    return SETAS[i];
+  }
 
   let last = performance.now();
   function frame(now) {
@@ -69,6 +81,16 @@ async function boot() {
       fpsEl.textContent = `${Math.round(fpsFrames / fpsAcc)} fps`;
       posEl.textContent =
         `x ${player.pos.x.toFixed(1)}  y ${player.pos.y.toFixed(1)}  z ${player.pos.z.toFixed(1)}`;
+
+      if (aldeiaEl) {
+        const perto = bots.village.nearest(player.pos.x, player.pos.z);
+        const faltam = bots.village.pending.length;
+        aldeiaEl.textContent = perto
+          ? `${seta(perto.origin.x, perto.origin.z)} ${perto.kind}`
+            + ` a ${Math.round(perto.dist)}m${perto.emObra ? ' (em obra)' : ''}`
+            + (faltam ? ` · faltam ${faltam}` : ' · aldeia completa')
+          : 'os bots ainda estão escolhendo onde construir';
+      }
       fpsAcc = 0; fpsFrames = 0;
     }
 

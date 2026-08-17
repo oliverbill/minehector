@@ -74,6 +74,10 @@ body { font-family: 'Courier New', monospace; user-select: none; }
   font-size: 13px; text-shadow: 1px 1px 2px #000; pointer-events: none;
 }
 
+/* Bússola da aldeia: para onde fica a construção mais próxima e quantas faltam.
+   Amarelo porque é a única linha da HUD que pede ação — as outras são estado. */
+#aldeia { margin-top: 4px; color: #ffd9a0; }
+
 #overlay {
   position: fixed; inset: 0; background: rgba(0, 0, 0, 0.65);
   display: flex; align-items: center; justify-content: center;
