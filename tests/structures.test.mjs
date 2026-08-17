@@ -194,6 +194,52 @@ test('a aldeia fica ao alcance de uma caminhada, mesmo com o bot longe', () => {
   }
 });
 
+test('em ladeira, a obra dá degraus até a porta — e dá para entrar', () => {
+  // Terreno em rampa descendo para -Z (a frente das plantas), com o desnível
+  // máximo que a aldeia aceita. Sem degraus, a soleira fica 4 blocos acima do
+  // chão da frente e a casa vira cenário: o jogador sobe 1 bloco por pulo.
+  const DESNIVEL = 4;
+  for (const kind of ['cabana', 'sobrado', 'torre']) {
+    const { world, floor } = flatWorld(40, 80);
+    const origin = { x: 30, y: floor + DESNIVEL, z: 30 };
+
+    // Escava a rampa à frente da construção: quanto mais longe, mais fundo.
+    for (let i = 1; i <= DESNIVEL + 4; i++) {
+      const alturaAlvo = floor + DESNIVEL - i;
+      for (let x = origin.x - 8; x <= origin.x + 12; x++) {
+        for (let y = alturaAlvo; y < floor + DESNIVEL; y++) {
+          world.setBlock(x, y, origin.z - i, Blocks.AIR);
+        }
+      }
+    }
+    // O terreno do sítio sobe até origin.y - 1, como a aldeia garante.
+    for (let x = origin.x - 4; x <= origin.x + 12; x++) {
+      for (let z = origin.z; z <= origin.z + 14; z++) {
+        for (let y = floor; y < origin.y; y++) world.setBlock(x, y, z, Blocks.STONE);
+      }
+    }
+
+    const plan = planStructure(kind, seeded(7));
+    const job = new BuildJob(world, origin, plan);
+    for (let i = 0; i < 8000 && !job.done; i++) job.step(1, []);
+    assert(job.done, `${kind}: obra não terminou`);
+
+    const alvos = INTERIORES[kind];
+    // O pé da rampa fica ABAIXO do platô, então a busca varre de cima para baixo.
+    const start = { x: origin.x + plan.door.x, y: 0, z: origin.z - DESNIVEL - 3 };
+    for (let y = origin.y + 3; y > floor - 8; y--) {
+      if (standable(world, start.x, y, start.z)) { start.y = y; break; }
+    }
+    assert(start.y > 0, `${kind}: ponto de partida inválido`);
+
+    const vistos = reachable(world, start);
+    for (const [lx, ly, lz] of alvos) {
+      const k = `${origin.x + lx},${origin.y + ly},${origin.z + lz}`;
+      assert(vistos.has(k), `${kind}: em ladeira, não se chega a (${lx},${ly},${lz})`);
+    }
+  }
+});
+
 test('a aldeia levanta uma de cada: as seis, sem repetir', () => {
   const { world } = flatWorld(40, 200);
   const spawn = { x: 8.5, z: 8.5 };

@@ -42,7 +42,12 @@ const SITE_TRIES = 60;
 // primeira coisa que o jogador via era um buraco no chão em vez de uma casa.
 const PEQUENAS = new Set(['poco', 'roca']);
 
-const MAX_SLOPE = 2;                // desnível tolerado no terreno do sítio
+// Desnível tolerado no terreno do sítio. Era 2, e num censo do terreno da seed
+// do jogo isso deixava o sobrado com 12 sítios válidos num raio de 16 — 95% das
+// posições recusadas por inclinação, e por isso a aldeia fugia para longe. Com 4
+// dobra o número de sítios; o degrau maior na entrada é resolvido por DOOR_STEPS.
+const MAX_SLOPE = 4;
+const DOOR_STEPS = 6;               // degraus máximos da soleira até o chão
 
 /** A célula [c, c+1)³ toca a AABB de alguma entidade? */
 function occupiedBy(occupants, cx, cy, cz) {
@@ -85,7 +90,31 @@ export class BuildJob {
         }
       }
     }
-    this.queue = [...base, ...this.queue];
+    // Degraus da porta até o chão, do lado de fora.
+    //
+    // O piso é assentado acima do PONTO MAIS ALTO do terreno do sítio, senão a
+    // casa nasceria enterrada. Em terreno inclinado isso põe a soleira vários
+    // blocos acima do lado de baixo — e o jogador sobe 1 bloco por pulo. Sem
+    // estes degraus, tolerar terreno acidentado significaria casa em que não se
+    // entra, que é cenário, não casa. Ficam no fim da fila para nenhuma limpeza
+    // da planta apagá-los.
+    const degraus = [];
+    if (plan.door) {
+      for (let i = 1; i <= DOOR_STEPS; i++) {
+        const lx = plan.door.x;
+        const lz = plan.door.z - i;          // a frente da planta é -Z
+        const wx = origin.x + lx;
+        const wz = origin.z + lz;
+        const topo = origin.y - i;           // um degrau por bloco de afastamento
+        if (world.surfaceHeight(wx, wz) >= topo) break;   // o chão já alcançou
+        for (let y = topo; y > topo - FOUNDATION_DEPTH; y--) {
+          if (world.isSolid(wx, y, wz)) break;
+          degraus.push([lx, y - origin.y, lz, Blocks.STONE]);
+        }
+      }
+    }
+
+    this.queue = [...base, ...this.queue, ...degraus];
     this.total = this.queue.length;
   }
 
