@@ -1,5 +1,7 @@
 import { WORLD_SEED } from './constants.js';
-import { openStorage, loadAllDiffs, flushDiffs } from './world/storage.js';
+import {
+  openStorage, loadAllDiffs, flushDiffs, loadVillage, saveVillage, deleteWorld,
+} from './world/storage.js';
 import { World } from './world/world.js';
 import { createScene, ChunkRenderer } from './render/renderer.js';
 import { createAtlas } from './render/atlas.js';
@@ -30,10 +32,31 @@ async function boot() {
   const input = new Input(canvas);
   const interaction = new Interaction(world, player, scene, input);
   const view = new View(world, player, scene, input, (mode) => interaction.say(MODE_NAMES[mode]));
-  const bots = new BotManager(scene, world, 3);
+  const bots = new BotManager(scene, world, 3, await loadVillage());
+  // A aldeia vai para o disco quando uma obra fica pronta — poucas vezes por
+  // sessão. Assim, ao voltar, os bots sabem o que já existe e levantam só o que
+  // falta, em vez de recomeçar as seis por cima das casas de ontem.
+  bots.village.onChange = () => {
+    saveVillage(bots.village.serialize()).catch((err) => console.error('saveVillage:', err));
+  };
 
   const overlay = document.getElementById('overlay');
   overlay.addEventListener('click', () => canvas.requestPointerLock());
+
+  // Recomeçar: apaga blocos e aldeia e recarrega. stopPropagation porque o
+  // clique no overlay pede o pointer lock, e travar o mouse ao apagar o mundo
+  // deixaria o jogador olhando para um mundo novo sem entender o que aconteceu.
+  const resetBtn = document.getElementById('reset');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm('Apagar este mundo e começar outro do zero?')) return;
+      resetBtn.disabled = true;
+      resetBtn.textContent = 'apagando...';
+      await deleteWorld().catch((err) => console.error('deleteWorld:', err));
+      location.reload();
+    });
+  }
   document.addEventListener('pointerlockchange', () => {
     overlay.classList.toggle('hidden', document.pointerLockElement === canvas);
   });

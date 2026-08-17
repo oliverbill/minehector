@@ -275,6 +275,49 @@ test('a primeira construção é uma casa, não um poço', () => {
   }
 });
 
+test('a aldeia salva continua de onde parou, e só levanta o que falta', () => {
+  const { world } = flatWorld(40, 200);
+  const spawn = { x: 8.5, z: 8.5 };
+
+  // Sessão 1: levanta parte da aldeia e "grava".
+  const s1 = new Village(world, spawn, seeded(41));
+  let salvo = null;
+  s1.onChange = () => { salvo = JSON.parse(JSON.stringify(s1.serialize())); };
+  const jobs = [];
+  for (let i = 0; i < 3; i++) {
+    const j = s1.planNear(spawn.x, spawn.z);
+    if (j) jobs.push(j);
+  }
+  for (const j of jobs) for (let i = 0; i < 4000 && !j.done; i++) j.step(1, []);
+  s1.tick();
+  assert(salvo && salvo.length === jobs.length, `gravou ${salvo ? salvo.length : 0} de ${jobs.length}`);
+
+  // Sessão 2: o jogo recarregou com o mundo E a aldeia salvos.
+  const s2 = new Village(world, spawn, seeded(42), salvo);
+  assertEqual(s2.structures.length, salvo.length, 'não reconheceu o que já existia');
+  assertEqual(s2.built.length, salvo.length, 'casa salva não conta como pronta');
+  for (const s of salvo) {
+    assert(!s2.pending.includes(s.kind), `${s.kind} já existe e ainda está pendente`);
+  }
+
+  // E o que falta é levantado — sem recomeçar os tipos que já estão de pé.
+  for (let i = 0; i < 200 && !s2.full; i++) s2.planNear(spawn.x, spawn.z);
+  assertEqual(s2.structures.length, MAX_STRUCTURES, 'não completou a aldeia');
+  const tipos = s2.structures.map((s) => s.kind);
+  assertEqual(new Set(tipos).size, tipos.length, `repetiu tipo: ${tipos.join(', ')}`);
+});
+
+test('canteiro de obra não é salvo: só entra no disco quando fica pronto', () => {
+  const { world } = flatWorld(40, 200);
+  const aldeia = new Village(world, { x: 8.5, z: 8.5 }, seeded(43));
+  const job = aldeia.planNear(8.5, 8.5);
+  assert(job, 'não planejou nada');
+
+  assertEqual(aldeia.serialize().length, 0, 'obra recém-começada já foi para o disco');
+  for (let i = 0; i < 4000 && !job.done; i++) job.step(1, []);
+  assertEqual(aldeia.serialize().length, 1, 'obra pronta não entrou no disco');
+});
+
 test('obra nova não nasce em cima de casa de sessão anterior', () => {
   const { world, floor } = flatWorld(40, 160);
   const spawn = { x: 8.5, z: 8.5 };

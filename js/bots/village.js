@@ -170,13 +170,48 @@ export class BuildJob {
   }
 }
 
+// Obra de uma construção que veio salva: já está de pé, não há nada a assentar.
+const OBRA_PRONTA = { done: true, progress: 1, queue: [] };
+
 export class Village {
-  constructor(world, spawn, rnd = Math.random) {
+  /**
+   * @param {object} saved — lista devolvida por loadVillage(), ou null.
+   *   Com ela a aldeia sabe o que já existe no mundo e continua de onde parou,
+   *   em vez de tentar erguer tudo de novo por cima das casas de ontem.
+   */
+  constructor(world, spawn, rnd = Math.random, saved = null) {
     this.world = world;
     this.spawn = spawn;
     this.rnd = rnd;
+    this.onChange = null;   // avisa quem persiste (main.js)
     this.structures = [];           // { kind, origin, door: {x,z}, bounds, job }
     this._fails = new Map();        // tipo -> quantas vezes não achou lugar
+
+    for (const s of Array.isArray(saved) ? saved : []) {
+      if (!s || !s.kind || !s.origin || !s.bounds) continue;
+      this.structures.push({ ...s, job: OBRA_PRONTA });
+    }
+    this._prontas = this.structures.length;
+  }
+
+  /** O que vai para o disco: só dado, sem a obra em andamento. */
+  serialize() {
+    return this.built.map(({ kind, origin, door, bounds }) => ({ kind, origin, door, bounds }));
+  }
+
+  _changed() { if (this.onChange) this.onChange(); }
+
+  /**
+   * Chamada a cada frame pelo BotManager. Salva quando uma obra ACABA, não
+   * quando começa: canteiro de obra salvo vira, no próximo carregamento, uma
+   * casa pela metade que ninguém mais termina.
+   */
+  tick() {
+    const prontas = this.built.length;
+    if (prontas !== this._prontas) {
+      this._prontas = prontas;
+      this._changed();
+    }
   }
 
   get full() { return this.structures.length >= MAX_STRUCTURES; }

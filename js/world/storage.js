@@ -12,6 +12,13 @@ import { chunkKey } from '../constants.js';
 
 const DB_NAME = 'cubocraft';
 const STORE = 'diffs';
+// A aldeia também é salva. Sem isto ela nascia vazia a cada carregamento e
+// tentava erguer as seis construções de novo: as antigas continuavam no mundo
+// ocupando o espaço perto do spawn, as novas eram empurradas para 30 blocos, e o
+// jogador via sempre as mesmas de perto sem entender por que não apareciam mais.
+const VILLAGE_STORE = 'village';
+const VILLAGE_KEY = 'v1';
+const DB_VERSION = 2;
 const FLUSH_INTERVAL_MS = 3000;
 
 let db = null;
@@ -43,10 +50,13 @@ export async function openStorage() {
   }
 
   db = await new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    // Migração aditiva: quem já tinha mundo salvo na versão 1 só ganha a store
+    // nova e continua com os blocos dele.
     req.onupgradeneeded = () => {
       const d = req.result;
       if (!d.objectStoreNames.contains(STORE)) d.createObjectStore(STORE);
+      if (!d.objectStoreNames.contains(VILLAGE_STORE)) d.createObjectStore(VILLAGE_STORE);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -104,6 +114,45 @@ export async function loadAllDiffs() {
     if (ownerMap.size) storedOwners.set(keys[i], new Map(ownerMap));
   }
   return { blocks, owners };
+}
+
+/**
+ * Apaga o mundo inteiro — blocos e aldeia. Existe porque um save carrega o
+ * histórico de todas as versões do jogo por que passou, e às vezes o que se
+ * quer é ver o mundo como ele nasce hoje, sem ruína de ontem no caminho.
+ */
+export async function deleteWorld() {
+  if (db) { db.close(); db = null; }
+  stored.clear(); storedOwners.clear(); pending.clear(); pendingOwners.clear();
+  await new Promise((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(DB_NAME);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => resolve();   // outra aba segurando: o reload resolve
+  });
+}
+
+/**
+ * A aldeia salva: lista simples de construções (tipo, origem, porta, limites).
+ * Devolve null quando não há nada gravado — mundo novo, ou save de antes disto.
+ */
+export async function loadVillage() {
+  const d = await openStorage();
+  const tx = d.transaction(VILLAGE_STORE, 'readonly');
+  const dados = await requestToPromise(tx.objectStore(VILLAGE_STORE).get(VILLAGE_KEY));
+  return dados || null;
+}
+
+/** Grava a aldeia. Chamada poucas vezes por sessão (uma por construção). */
+export async function saveVillage(dados) {
+  if (!db) return;
+  const tx = db.transaction(VILLAGE_STORE, 'readwrite');
+  tx.objectStore(VILLAGE_STORE).put(dados, VILLAGE_KEY);
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
 }
 
 /**

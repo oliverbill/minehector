@@ -78,6 +78,15 @@ body { font-family: 'Courier New', monospace; user-select: none; }
    Amarelo porque é a única linha da HUD que pede ação — as outras são estado. */
 #aldeia { margin-top: 4px; color: #ffd9a0; }
 
+/* Discreto de propósito: apaga o mundo, e ninguém deve clicar sem querer. */
+#reset {
+  margin-top: 14px; padding: 5px 12px; font: inherit; font-size: 12px;
+  color: #b9b9c2; background: rgba(0, 0, 0, 0.4);
+  border: 1px solid #55555f; border-radius: 4px; cursor: pointer;
+}
+
+#reset:hover { color: #fff; border-color: #8a8a98; }
+
 #overlay {
   position: fixed; inset: 0; background: rgba(0, 0, 0, 0.65);
   display: flex; align-items: center; justify-content: center;

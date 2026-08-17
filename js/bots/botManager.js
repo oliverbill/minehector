@@ -19,12 +19,13 @@ const SPAWN_RADIUS = 10;                    // blocos
 const FALLBACK_Y = 40;                      // se surfaceHeight devolver -1
 
 export class BotManager {
-  constructor(scene, world, count) {
+  /** @param {object} savedVillage — aldeia salva (loadVillage), ou null. */
+  constructor(scene, world, count, savedVillage = null) {
     this.world = world;
     this.bots = [];
     // A aldeia é compartilhada: é ela que impede dois bots de levantarem casas
     // uma dentro da outra, e é nela que ficam as portas que todos visitam.
-    this.village = new Village(world, SPAWN_CENTER);
+    this.village = new Village(world, SPAWN_CENTER, Math.random, savedVillage);
 
     for (let i = 0; i < count; i++) {
       const ang = (i / count) * Math.PI * 2;
@@ -66,5 +67,7 @@ export class BotManager {
       bot.build(dt, ocupantes);
       bot.syncMesh(dt);
     }
+
+    this.village.tick();   // persiste a aldeia quando uma obra fica pronta
   }
 }
