@@ -7,7 +7,7 @@
 // basta, porque terra, madeira e a lateral da grama são todas marrons.
 
 import * as THREE from 'three';
-import { Blocks } from '../constants.js';
+import { Blocks, isPlant } from '../constants.js';
 
 const CELL = 16;      // pixels por célula
 const COLS = 8;       // células por linha
@@ -23,6 +23,14 @@ const Cells = {
   WOOD: 5,
   LEAVES: 6,
   WATER: 7,
+  LAVA: 8,
+  FIRE: 9,
+  FLOWER_RED: 10,
+  FLOWER_YELLOW: 11,
+  TALL_GRASS: 12,
+  BIRCH_WOOD: 13,
+  BIRCH_LEAVES: 14,
+  PINE_LEAVES: 15,
 };
 
 // Ruído determinístico em [0, 1) por pixel — sem Math.random.
@@ -58,6 +66,14 @@ const SAND = [226, 212, 160];
 const WOOD = [154, 101, 42];
 const LEAVES = [46, 110, 40];
 const WATER = [56, 116, 200];
+const LAVA = [214, 92, 24];
+const FIRE = [242, 156, 40];
+const PETALA_VERM = [206, 58, 52];
+const PETALA_AMAR = [230, 196, 60];
+const CAULE = [70, 132, 52];
+const BETULA = [222, 218, 206];
+const FOLHA_BETULA = [122, 168, 74];
+const FOLHA_PINHO = [30, 76, 46];
 
 export function createAtlas() {
   const canvas = document.createElement('canvas');
@@ -136,6 +152,78 @@ export function createAtlas() {
     px(ctx, Cells.WATER, x, y, WATER, shade);
   });
 
+  // Lava — laranja com veios claros e crosta escura, mais contrastada que a
+  // água para se ler como quente mesmo de longe.
+  drawCell(ctx, Cells.LAVA, (x, y) => {
+    const veio = Math.sin((x * 0.7 + y * 1.3)) * 0.5 + 0.5;
+    const crosta = hash2(x >> 1, y >> 1, 91) > 0.86;
+    const shade = crosta ? -60 : -10 + veio * 52;
+    px(ctx, Cells.LAVA, x, y, LAVA, shade);
+  });
+
+  // As células abaixo são desenhadas em placa cruzada e ficam com o RESTO
+  // TRANSPARENTE — por isso nada de preencher a célula inteira antes. O material
+  // das plantas usa alphaTest, então o pixel que não for pintado aqui some.
+  const pintarPlanta = (cell, pixelFn) => {
+    for (let y = 0; y < CELL; y++) for (let x = 0; x < CELL; x++) pixelFn(x, y);
+  };
+
+  // Fogo: línguas subindo, mais largas embaixo e rarefeitas no alto.
+  pintarPlanta(Cells.FIRE, (x, y) => {
+    const altura = 1 - y / CELL;                       // 0 no topo, 1 na base
+    const lingua = Math.abs(Math.sin(x * 0.8 + altura * 3)) * 0.6 + altura * 0.55;
+    if (hash2(x, y, 101) > lingua) return;             // resto fica vazado
+    const quente = altura > 0.55 && hash2(x, y, 102) > 0.4;
+    px(ctx, Cells.FIRE, x, y, quente ? [250, 226, 120] : FIRE, (hash2(x, y, 103) - 0.5) * 30);
+  });
+
+  // Flores: caule fino ao centro, folhinhas e a corola em cima.
+  const flor = (cell, cor) => pintarPlanta(cell, (x, y) => {
+    const centro = Math.abs(x - 7.5);
+    if (y > 7 && centro < 1) { px(ctx, cell, x, y, CAULE, (hash2(x, y, 111) - 0.5) * 20); return; }
+    if (y > 9 && y < 12 && centro >= 1 && centro < 3.5 && (x + y) % 3 === 0) {
+      px(ctx, cell, x, y, CAULE, -14); return;   // folhas
+    }
+    const dx = x - 7.5;
+    const dy = y - 4.5;
+    const r = Math.sqrt(dx * dx + dy * dy);
+    if (r < 3.6) {
+      const miolo = r < 1.2;
+      px(ctx, cell, x, y, miolo ? [242, 214, 96] : cor, miolo ? 0 : (hash2(x, y, 112) - 0.5) * 34);
+    }
+  });
+  flor(Cells.FLOWER_RED, PETALA_VERM);
+  flor(Cells.FLOWER_YELLOW, PETALA_AMAR);
+
+  // Capim alto: tufo de talos de alturas diferentes.
+  pintarPlanta(Cells.TALL_GRASS, (x, y) => {
+    const talo = 4 + Math.floor(hash2(x, 0, 121) * 9);   // até onde este talo sobe
+    if (y < CELL - talo) return;
+    px(ctx, Cells.TALL_GRASS, x, y, GRASS, -18 + hash2(x, y, 122) * 34);
+  });
+
+  // Bétula: tronco claro com as marcas escuras características.
+  drawCell(ctx, Cells.BIRCH_WOOD, (x, y) => {
+    const marca = hash2(x >> 2, y >> 1, 131) > 0.82 && x % 4 < 3;
+    const shade = marca ? -70 : (hash2(x, y, 132) - 0.5) * 16;
+    px(ctx, Cells.BIRCH_WOOD, x, y, BETULA, shade);
+  });
+
+  drawCell(ctx, Cells.BIRCH_LEAVES, (x, y) => {
+    const clump = hash2(x >> 1, y >> 1, 141);
+    const gap = hash2(x, y, 142);
+    const shade = gap > 0.9 ? -40 : clump > 0.7 ? 26 : clump < 0.3 ? -18 : 0;
+    px(ctx, Cells.BIRCH_LEAVES, x, y, FOLHA_BETULA, shade);
+  });
+
+  // Pinheiro: agulhas escuras, com riscos verticais em vez de cachos.
+  drawCell(ctx, Cells.PINE_LEAVES, (x, y) => {
+    const agulha = (x + Math.floor(y / 2)) % 3 === 0;
+    const gap = hash2(x, y, 151) > 0.88;
+    const shade = gap ? -34 : agulha ? 24 : (hash2(x, y, 152) - 0.5) * 14;
+    px(ctx, Cells.PINE_LEAVES, x, y, FOLHA_PINHO, shade);
+  });
+
   const texture = new THREE.CanvasTexture(canvas);
   texture.magFilter = THREE.NearestFilter;
   texture.minFilter = THREE.NearestFilter;
@@ -156,6 +244,14 @@ export function createAtlas() {
       case Blocks.WOOD: return Cells.WOOD;
       case Blocks.LEAVES: return Cells.LEAVES;
       case Blocks.WATER: return Cells.WATER;
+      case Blocks.LAVA: return Cells.LAVA;
+      case Blocks.FIRE: return Cells.FIRE;
+      case Blocks.FLOWER_RED: return Cells.FLOWER_RED;
+      case Blocks.FLOWER_YELLOW: return Cells.FLOWER_YELLOW;
+      case Blocks.TALL_GRASS: return Cells.TALL_GRASS;
+      case Blocks.BIRCH_WOOD: return Cells.BIRCH_WOOD;
+      case Blocks.BIRCH_LEAVES: return Cells.BIRCH_LEAVES;
+      case Blocks.PINE_LEAVES: return Cells.PINE_LEAVES;
       default: return Cells.DIRT;
     }
   };
@@ -185,7 +281,13 @@ export function createAtlas() {
     const out = document.createElement('canvas');
     out.width = CELL;
     out.height = CELL;
-    out.getContext('2d').drawImage(
+    const octx = out.getContext('2d');
+    // Planta tem a célula vazada: sem um fundo, o ícone do hotbar sai invisível.
+    if (isPlant(blockId)) {
+      octx.fillStyle = 'rgba(28,34,28,0.85)';
+      octx.fillRect(0, 0, CELL, CELL);
+    }
+    octx.drawImage(
       canvas,
       (cell % COLS) * CELL, Math.floor(cell / COLS) * CELL, CELL, CELL,
       0, 0, CELL, CELL,

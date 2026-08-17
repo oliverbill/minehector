@@ -57,9 +57,12 @@ function sweepAxis(world, entity, axis, delta) {
   return true;
 }
 
-/** A AABB da entidade encosta em alguma célula de água? */
-export function inWater(world, entity) {
-  if (!world.isWater) return false;
+/**
+ * A AABB da entidade encosta em algum líquido? Água e lava se comportam igual
+ * na física — o que muda entre elas é a cara, não o empuxo.
+ */
+export function inLiquid(world, entity) {
+  if (!world.isLiquid) return false;
   const half = entity.width / 2;
   const x0 = Math.floor(entity.pos.x - half + EPS);
   const x1 = Math.floor(entity.pos.x + half - EPS);
@@ -70,7 +73,7 @@ export function inWater(world, entity) {
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       for (let z = z0; z <= z1; z++) {
-        if (world.isWater(x, y, z)) return true;
+        if (world.isLiquid(x, y, z)) return true;
       }
     }
   }
@@ -80,8 +83,8 @@ export function inWater(world, entity) {
 export function moveEntity(world, entity, dt) {
   const vel = entity.vel;
 
-  const naAgua = inWater(world, entity);
-  entity.inWater = naAgua;
+  const naAgua = inLiquid(world, entity);
+  entity.inWater = naAgua;   // nome antigo, mantido para quem já lia
 
   if (naAgua) {
     vel.y -= GRAVITY * WATER_GRAVITY * dt;

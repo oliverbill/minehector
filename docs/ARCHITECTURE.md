@@ -64,6 +64,16 @@ Como `setBlock` é o único ponto por onde o mundo muda, a regra vale para qualq
 
 ## js/render/ (frente B)
 
+### Blocos que não são cubo
+
+`isSolidBlock`, `isLiquid` e `isPlant` (constants.js) dividem os blocos em três comportamentos:
+
+- **líquidos** (água, lava): atravessam-se, com empuxo na física (`inLiquid`); água vai para a malha translúcida, lava para a opaca — lava translúcida some contra o terreno;
+- **plantas** (flores, capim, fogo): desenhadas como **duas placas cruzadas**, não como cubo — flor que ocupa um cubo inteiro é um bloco colorido, não uma flor. Malha própria, material com `alphaTest` (transparência ordenaria mal e faria a flor piscar atrás da grama) e `DoubleSide`. A célula do atlas fica com o **fundo vazado**, e por isso o ícone do hotbar precisa de um fundo próprio;
+- **sólidos**: o resto.
+
+O culling do mesher trata planta como vizinho vazio: sem isso, um capim encostado num bloco apagava a face dele e o terreno ficava com buracos.
+
 ### atlas.js
 ```js
 export function createAtlas() // -> { texture, uvRect, swatch }
@@ -96,6 +106,30 @@ export class ChunkRenderer {
 }
 ```
 `update`: garante meshes dos chunks no raio (fila com orçamento ~2 chunks/frame, mais perto primeiro), re-mesheia os de `world.dirty` (prioridade máxima, consome e limpa o set), remove+dispose meshes além de RENDER_RADIUS+1. Um `THREE.Mesh` por chunk, material único com a textura do atlas.
+
+### sky.js e weather.js — hora do dia e tempo
+
+```js
+export class Sky {
+  constructor(scene, sun, ambient, t0)  // sun/ambient vêm de createScene
+  update(dt, playerPos, escuro)         // cor do céu e da névoa, luzes, sol, lua, estrelas, nuvens
+  phase        // 'manhã' | 'tarde' | 'noite'
+  untilNext    // segundos até o próximo período
+}
+export class Weather {
+  constructor(scene, rnd)
+  update(dt, playerPos)
+  kind         // 'limpo' | 'chuva' | 'neve'
+  darkness     // quanto o tempo escurece o céu, em [0,1]
+  onChange     // avisado na virada, para o recado na tela
+}
+```
+
+Três períodos de 15 minutos (`PERIODO`), interpolados entre marcos de luz — corte seco de cor lê como bug de render. O sol nasce a leste e se põe no fim da tarde: o arco cabe nos dois primeiros períodos (`DIA_FRACAO`), não no ciclo inteiro. A noite escurece mas a ambiente não vai a zero, senão o jogo fica injogável em vez de escuro. Céu, nuvens e estrelas acompanham o jogador — o céu não tem borda.
+
+As partículas do clima vivem numa caixa que anda com o jogador e reciclam quem chega embaixo: algumas centenas bastam para a tela inteira, e o custo não cresce com o mundo. Chuva e neve diferem em queda, deriva e tamanho, que é o que as distingue sem legenda.
+
+**Nada nesses dois módulos altera o mundo, a física ou os bots** — só cor, posição e visibilidade. Dá para desligar sem quebrar o jogo.
 
 ## js/player/ (frente C)
 

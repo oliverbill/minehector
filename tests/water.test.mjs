@@ -5,7 +5,7 @@
 import { test, assert, assertEqual } from './tiny-test.mjs';
 import { Blocks, Owner, isSolidBlock } from '../js/constants.js';
 import { buildChunkMesh } from '../js/render/mesher.js';
-import { moveEntity, inWater, WATER_SINK } from '../js/player/physics.js';
+import { moveEntity, inLiquid, WATER_SINK } from '../js/player/physics.js';
 import { raycastVoxel } from '../js/player/raycast.js';
 import { flatWorld, scene, aimAt } from './harness.mjs';
 
@@ -60,7 +60,7 @@ test('quem entra na água afunda devagar em vez de despencar', () => {
     moveEntity(world, molhado, 1 / 60);
   }
 
-  assert(inWater(world, molhado), 'o corpo não está na água');
+  assert(inLiquid(world, molhado), 'o corpo não está na água');
   assertEqual(molhado.inWater, true, 'a flag inWater não foi marcada');
   assert(!seco.onGround && !molhado.onGround, 'alguém já pousou — a medição não vale');
 

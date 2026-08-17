@@ -29,10 +29,18 @@ python3 -m http.server 8080
 | Shift | correr |
 | Mouse esq. | quebrar bloco |
 | Mouse dir. | colocar bloco |
-| 1–7 | escolher bloco do hotbar (7 = água) |
+| 1–9 | escolher bloco do hotbar (7 água, 8 lava, 9 fogo) |
 | V | alternar 1ª pessoa → 3ª pessoa → 3ª de frente |
 | Espaço (na água) | nadar para cima |
 | ESC | soltar o mouse |
+
+**O mundo muda de hora e de tempo.** Manhã, tarde e noite, 15 minutos cada, com o sol
+cruzando o céu, a lua e as estrelas de noite e nuvens passando. De vez em quando chove ou
+neva. A HUD mostra o período, quanto falta e o tempo.
+
+**O cenário tem mais coisa.** Além do carvalho, há bosques de pinheiro (copa cônica) e de
+bétula (tronco claro); flores vermelhas e amarelas e capim alto nascem na grama; e há lava,
+com fogo na beirada, tanto no fundo do mundo quanto em lagos à flor da terra.
 
 **Piscinas.** A água é o único bloco que não é parede: você atravessa nadando.
 Cave um buraco, encha com o bloco 7 e pule dentro — lá dentro a queda é lenta e

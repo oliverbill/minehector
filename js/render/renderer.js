@@ -58,8 +58,18 @@ export class ChunkRenderer {
       depthWrite: false,
       side: THREE.DoubleSide,
     });
+    // Plantas: recortadas por alphaTest em vez de transparência. Transparência
+    // ordenaria mal contra o terreno e faria a flor piscar atrás da grama;
+    // alphaTest simplesmente descarta o pixel vazio, e o resto se comporta como
+    // sólido. DoubleSide porque a placa é vista dos dois lados.
+    this.plantMaterial = new THREE.MeshLambertMaterial({
+      map: atlas.texture,
+      alphaTest: 0.5,
+      side: THREE.DoubleSide,
+    });
     this.meshes = new Map();      // chunkKey -> THREE.Mesh (opaco)
     this.waterMeshes = new Map(); // chunkKey -> THREE.Mesh (água)
+    this.plantMeshes = new Map(); // chunkKey -> THREE.Mesh (flores, capim, fogo)
   }
 
   update(playerPos) {
@@ -79,7 +89,7 @@ export class ChunkRenderer {
     }
 
     // 2) Remover + dispose de chunks além de RENDER_RADIUS+1.
-    for (const mapa of [this.meshes, this.waterMeshes]) {
+    for (const mapa of [this.meshes, this.waterMeshes, this.plantMeshes]) {
       for (const [key, mesh] of mapa) {
         const [cx, cz] = key.split(',').map(Number);
         const dist = Math.max(Math.abs(cx - pcx), Math.abs(cz - pcz));
@@ -112,6 +122,7 @@ export class ChunkRenderer {
     const getBlock = (wx, wy, wz) => this.world.getBlock(wx, wy, wz);
     const data = buildChunkMesh(getBlock, cx, cz, this.uvRect);
     this._apply(key, data.opaque, this.meshes, this.material, 0);
+    this._apply(key, data.plants, this.plantMeshes, this.plantMaterial, 0);
     this._apply(key, data.water, this.waterMeshes, this.waterMaterial, 1);
   }
 

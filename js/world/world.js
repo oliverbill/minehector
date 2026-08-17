@@ -3,7 +3,7 @@
 // (incluindo vizinhos — diagonais — quando o bloco editado está na borda).
 
 import {
-  CHUNK_SIZE, CHUNK_HEIGHT, blockIndex, Blocks, chunkKey, Owner, isSolidBlock,
+  CHUNK_SIZE, CHUNK_HEIGHT, blockIndex, Blocks, chunkKey, Owner, isSolidBlock, isLiquid,
 } from '../constants.js';
 import { generateChunk } from './worldgen.js';
 import { queueDiff } from './storage.js';
@@ -123,6 +123,11 @@ export class World {
   /** true se há água nesta célula. */
   isWater(wx, wy, wz) {
     return this.getBlock(wx, wy, wz) === Blocks.WATER;
+  }
+
+  /** true se há líquido (água ou lava): atravessa-se nadando. */
+  isLiquid(wx, wy, wz) {
+    return isLiquid(this.getBlock(wx, wy, wz));
   }
 
   /** true se há qualquer bloco aqui — o que a mira acerta, água inclusive. */
