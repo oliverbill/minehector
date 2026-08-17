@@ -15,7 +15,7 @@ const { runAll } = await import('./tiny-test.mjs');
 const { stubDom } = await import('./harness.mjs');
 stubDom();
 
-console.log('CuboCraft — testes\n');
+console.log('Minehector — testes\n');
 await import('./raycast.test.mjs');
 await import('./placement.test.mjs');
 await import('./avatar.test.mjs');

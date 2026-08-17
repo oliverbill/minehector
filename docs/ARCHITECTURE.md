@@ -1,4 +1,4 @@
-# CuboCraft — arquitetura e contratos entre módulos
+# Minehector — arquitetura e contratos entre módulos
 
 Jogo voxel estilo Minecraft, single-player, navegador, sem build step:
 ES modules puros + Three.js vendorado em `lib/three.module.js` (import via importmap, specifier `"three"`).
