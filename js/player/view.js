@@ -36,6 +36,13 @@ export class View {
     this.avatar.group.visible = false;
     scene.add(this.avatar.group);
 
+    // Aviso de submerso. Fica aqui e não na Interaction porque quem sabe onde a
+    // câmera está é a View — e é a posição do OLHO que decide, não a do corpo:
+    // com água pelo peito você continua vendo o mundo normalmente.
+    this._underwater = typeof document !== 'undefined'
+      ? document.getElementById('underwater')
+      : null;
+
     if (input && input.onKeyPress) {
       input.onKeyPress((code) => { if (code === 'KeyV') this.cycle(); });
     }
@@ -84,6 +91,13 @@ export class View {
 
     const eye = p.eyePos;
     camera.rotation.order = 'YXZ';
+
+    if (this._underwater) {
+      const submerso = this.world.isWater(
+        Math.floor(eye.x), Math.floor(eye.y), Math.floor(eye.z),
+      );
+      this._underwater.classList.toggle('on', submerso);
+    }
 
     if (this.mode === FIRST) {
       camera.position.set(eye.x, eye.y, eye.z);

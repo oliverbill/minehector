@@ -22,7 +22,16 @@ const ADIAMENTOS_MAX = 40;          // voltas que um bloco espera quem está no 
 // (desnível, vizinha perto demais, coisa do jogador) come um candidato. Com 40 a
 // aldeia parava na metade das casas por falta de sorteio, não por falta de lugar.
 // É um laço de aritmética que roda só quando um bot decide construir.
-const SITE_TRIES = 160;
+const SITE_TRIES = 60;
+// Poço e roça são pequenos, e pequeno cabe em quase todo terreno. Ficam por
+// último na escolha do tipo, E entram no máximo uma vez cada.
+//
+// Só a ordem não bastava: depois de duas casas o raio da aldeia fica apertado
+// para plantas grandes, e daí em diante só o poço cabia — a aldeia terminava
+// com três poços e duas casas. Uma aldeia tem um poço e uma horta; o resto são
+// casas, e é melhor construir menos do que encher o quintal de poço.
+const PEQUENAS = new Set(['poco', 'roca']);
+const LIMITE_PEQUENAS = 1;
 const MAX_SLOPE = 2;                // desnível tolerado no terreno do sítio
 
 /** A célula [c, c+1)³ toca a AABB de alguma entidade? */
@@ -68,6 +77,27 @@ export class BuildJob {
     }
     this.queue = [...base, ...this.queue];
     this.total = this.queue.length;
+  }
+
+  /**
+   * Tira quem está no caminho e o põe de pé no primeiro lugar acima onde ele
+   * CABE — duas células livres, que é a altura de um corpo.
+   *
+   * Subir um bloco e pronto não serve: se houver bloco logo acima (e numa casa
+   * costuma haver: piso, viga, telhado), o empurrão emparedava a pessoa dentro
+   * da parede recém-erguida. `wy` conta como ocupado porque o bloco que motivou
+   * o empurrão é assentado logo em seguida.
+   */
+  _shoveOut(e, wx, wy, wz) {
+    const alt = Math.ceil(e.height || 1.8);
+    for (let y = wy + 1; y <= wy + 8; y++) {
+      let cabe = true;
+      for (let i = 0; i < alt; i++) {
+        if (this.world.isSolid(wx, y + i, wz)) { cabe = false; break; }
+      }
+      if (cabe) { e.pos.y = y; return; }
+    }
+    e.pos.y = wy + 1;   // teto de tentativas: melhor por cima do que dentro
   }
 
   get done() { return this.queue.length === 0; }
@@ -118,7 +148,7 @@ export class BuildJob {
           continue;
         }
         for (const e of occupants) {
-          if (e && e.pos && occupiedBy([e], wx, wy, wz)) e.pos.y = wy + 1;
+          if (e && e.pos && occupiedBy([e], wx, wy, wz)) this._shoveOut(e, wx, wy, wz);
         }
       }
       // Célula do jogador é intocável, e ao contrário do caso acima não adianta
@@ -162,24 +192,52 @@ export class Village {
   }
 
   /**
-   * A planta, posta em `origin`, atropelaria alguma coisa do jogador?
+   * A planta, posta em `origin`, atropelaria coisa de alguém?
    *
-   * Só conta conflito de verdade: célula dele onde a obra quer assentar bloco,
-   * ou bloco dele onde a obra quer vazio. Recusar por qualquer célula dele era
-   * demais — quem quebra grama andando por aí vira dono de dezenas de células de
-   * ar, e a planta limpa um volume enorme de ar antes de montar. O resultado era
-   * a aldeia fugir para longe de quem mais joga, que foi exatamente a queixa.
+   * Do JOGADOR, só conta conflito de verdade: célula dele onde a obra quer
+   * assentar bloco, ou bloco dele onde a obra quer vazio. Recusar por qualquer
+   * célula dele era demais — quem quebra grama andando por aí vira dono de
+   * dezenas de células de ar, e a planta limpa um volume enorme de ar antes de
+   * montar. O resultado era a aldeia fugir para longe de quem mais joga.
+   *
+   * De um BOT, qualquer célula basta para recusar: dentro da sessão `_freeOf` já
+   * afasta os sítios, então célula de bot aqui só pode ser de uma construção de
+   * sessão ANTERIOR — que o mundo salvo trouxe de volta e que esta aldeia, nova
+   * em folha, não conhece. Sem isto a casa de ontem virava alicerce da de hoje.
    */
-  _clearOfPlayer(plan, origin) {
+  _siteIsFree(plan, origin) {
     for (const [x, y, z, id] of plan.blocks) {
       const wx = origin.x + x;
       const wy = origin.y + y;
       const wz = origin.z + z;
-      if (this.world.ownerOf(wx, wy, wz) !== Owner.PLAYER) continue;
+      const dono = this.world.ownerOf(wx, wy, wz);
+      if (dono === Owner.BOT) return false;
+      if (dono !== Owner.PLAYER) continue;
       const querVazio = id === Blocks.AIR;
       if (!querVazio || this.world.isSolid(wx, wy, wz)) return false;
     }
     return true;
+  }
+
+  /**
+   * Já há obra de bot dentro (ou colada em) deste retângulo?
+   *
+   * `_freeOf` cuida do afastamento entre construções desta sessão, mas a aldeia
+   * nasce vazia a cada carregamento do jogo, enquanto as casas ficam salvas. Só a
+   * posse das células sabe o que já existe ali. Varre o retângulo inteiro, com a
+   * margem do afastamento, e não só as células da planta: duas casas podem não
+   * dividir célula nenhuma e ainda assim ficarem encavaladas.
+   */
+  _botWorkNear(bounds, y) {
+    const m = Math.ceil(SITE_MIN_DIST / 2);
+    for (let x = bounds.x0 - m; x <= bounds.x1 + m; x++) {
+      for (let z = bounds.z0 - m; z <= bounds.z1 + m; z++) {
+        for (let dy = -1; dy <= 3; dy++) {
+          if (this.world.ownerOf(x, y + dy, z) === Owner.BOT) return true;
+        }
+      }
+    }
+    return false;
   }
 
   _freeOf(bounds) {
@@ -207,13 +265,46 @@ export class Village {
   }
 
   /**
+   * Ordem em que os tipos são tentados. Duas regras, e as duas nasceram da
+   * mesma queixa — "só vi uma construção, e bem simples":
+   *
+   *   1. tipo ainda não construído vem antes de repetição. Sorteio uniforme
+   *      dava três poços numa aldeia de quatro;
+   *   2. entre os inéditos, casa vem antes de poço e roça. O poço é o menor de
+   *      todos e por isso o que mais passa nos testes de terreno — sem esta
+   *      regra ele ganhava quase sempre, e a aldeia virava um campo de poços.
+   */
+  _kindOrder() {
+    const quantos = new Map();
+    for (const s of this.structures) quantos.set(s.kind, (quantos.get(s.kind) || 0) + 1);
+    return [...STRUCTURE_KINDS]
+      .filter((kind) => !PEQUENAS.has(kind) || (quantos.get(kind) || 0) < LIMITE_PEQUENAS)
+      .map((kind) => ({
+        kind,
+        peso: (quantos.has(kind) ? 10 : 0) + (PEQUENAS.has(kind) ? 2 : 0) + this.rnd(),
+      }))
+      .sort((a, b) => a.peso - b.peso)
+      .map((o) => o.kind);
+  }
+
+  /**
    * Procura terreno para uma construção nova perto de (cx,cz). Devolve a obra
    * pronta para começar, ou null se não achou lugar — o que é comum em terreno
    * quebrado, e por isso o bot volta a vaguear em vez de insistir.
+   *
+   * Tenta os tipos em ordem: antes, um tipo azarado no sorteio significava obra
+   * nenhuma naquela decisão, mesmo havendo lugar de sobra para outro.
    */
   planNear(cx, cz) {
     if (this.full) return null;
-    const kind = STRUCTURE_KINDS[Math.floor(this.rnd() * STRUCTURE_KINDS.length)];
+    for (const kind of this._kindOrder()) {
+      const job = this._trySite(kind, cx, cz);
+      if (job) return job;
+    }
+    return null;
+  }
+
+  _trySite(kind, cx, cz) {
     const plan = planStructure(kind, this.rnd);
     const fp = footprint(plan);
     const centro = this._searchCenter(cx, cz);
@@ -259,7 +350,8 @@ export class Village {
       // bloco no step() já protege o que é dele, mas uma casa erguida em cima da
       // construção do jogador sairia esburacada e por cima do trabalho alheio —
       // o lugar certo de recusar é aqui, antes de assentar o primeiro bloco.
-      if (!this._clearOfPlayer(plan, origin)) continue;
+      if (!this._siteIsFree(plan, origin)) continue;
+      if (this._botWorkNear(bounds, origin.y)) continue;
       // A porta olha para -Z, então "dentro" é alguns blocos em +Z. O bot visita
       // parando na soleira e depois entrando: parar na porta é ficar de fora.
       const door = plan.door

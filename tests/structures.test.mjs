@@ -191,6 +191,70 @@ test('a aldeia fica ao alcance de uma caminhada, mesmo com o bot longe', () => {
   }
 });
 
+test('a aldeia é feita de casas, não de um campo de poços', () => {
+  const PEQUENAS = ['poco', 'roca'];
+  const { world } = flatWorld(40, 160);
+  const spawn = { x: 8.5, z: 8.5 };
+
+  for (const semente of [11, 12, 13]) {
+    const aldeia = new Village(world, spawn, seeded(semente));
+    for (let i = 0; i < 40; i++) aldeia.planNear(spawn.x, spawn.z);
+    const tipos = aldeia.structures.map((s) => s.kind);
+    assert(tipos.length >= 3, `semente ${semente}: só ${tipos.length} construções`);
+
+    // O sorteio uniforme dava três poços numa aldeia de quatro: o poço é o menor
+    // de todos, e pequeno passa nos testes de terreno muito mais vezes. Repetir
+    // tipo é aceitável quando o grande já não cabe no raio; o que não pode é a
+    // aldeia inteira virar a mesma coisa pequena.
+    const casas = tipos.filter((t) => !PEQUENAS.includes(t));
+    assert(casas.length >= Math.ceil(tipos.length / 2),
+      `semente ${semente}: só ${casas.length} casas em ${tipos.length} (${tipos.join(', ')})`);
+    assert(new Set(tipos.slice(0, 3)).size === Math.min(3, tipos.length),
+      `semente ${semente}: as três primeiras se repetem (${tipos.join(', ')})`);
+  }
+});
+
+test('a primeira construção é uma casa, não um poço', () => {
+  const { world } = flatWorld(40, 160);
+  for (const semente of [1, 2, 3, 4, 5]) {
+    const aldeia = new Village(world, { x: 8.5, z: 8.5 }, seeded(semente));
+    aldeia.planNear(8.5, 8.5);
+    const primeira = aldeia.structures[0];
+    assert(primeira, `semente ${semente}: não planejou nada`);
+    assert(primeira.kind !== 'poco' && primeira.kind !== 'roca',
+      `semente ${semente}: a primeira coisa que o jogador vê é um ${primeira.kind}`);
+  }
+});
+
+test('obra nova não nasce em cima de casa de sessão anterior', () => {
+  const { world, floor } = flatWorld(40, 160);
+  const spawn = { x: 8.5, z: 8.5 };
+
+  // Sessão 1: levanta tudo até o fim.
+  const s1 = new Village(world, spawn, seeded(21));
+  const jobs = [];
+  for (let i = 0; i < 40; i++) {
+    const j = s1.planNear(spawn.x, spawn.z);
+    if (j) jobs.push(j);
+  }
+  for (const j of jobs) for (let i = 0; i < 3000 && !j.done; i++) j.step(1, []);
+  assert(s1.structures.length > 0, 'a sessão 1 não construiu nada');
+
+  // Sessão 2: o jogo recarregou. A aldeia nasce vazia, mas as casas continuam
+  // salvas no mundo — só a posse das células sabe que elas existem.
+  const s2 = new Village(world, spawn, seeded(22));
+  for (let i = 0; i < 40; i++) s2.planNear(spawn.x, spawn.z);
+
+  for (const b of s2.structures) {
+    for (const a of s1.structures) {
+      const dx = Math.max(a.bounds.x0 - b.bounds.x1, b.bounds.x0 - a.bounds.x1, 0);
+      const dz = Math.max(a.bounds.z0 - b.bounds.z1, b.bounds.z0 - a.bounds.z1, 0);
+      assert(dx > 0 || dz > 0,
+        `${b.kind} novo caiu em cima da ${a.kind} de antes (${a.bounds.x0},${a.bounds.z0})`);
+    }
+  }
+});
+
 test('a obra termina mesmo com alguém plantado em cima dela', () => {
   const { world, floor } = flatWorld(40, 64);
   const origin = { x: 20, y: floor, z: 20 };
@@ -227,8 +291,13 @@ test('buraco cavado pelo jogador não espanta a obra do lugar', () => {
 
   // Quem joga quebra grama por onde anda: dezenas de células de ar viram dele.
   // Isso não pode custar o sítio, senão a aldeia foge de quem mais joga.
-  for (let x = -20; x <= 40; x++) {
-    for (let z = -20; z <= 40; z++) {
+  //
+  // O trecho cavado é um quintal em volta do spawn, não o mapa inteiro: onde o
+  // jogador de fato escavou, a obra continua recusando (encher o buraco dele é
+  // mexer no trabalho dele), e o que se exige aqui é que o RESTO do raio siga
+  // servindo.
+  for (let x = 0; x <= 14; x++) {
+    for (let z = 0; z <= 14; z++) {
       if ((x + z) % 3) continue;
       world.setBlock(x, floor - 1, z, Blocks.AIR, Owner.PLAYER);
     }

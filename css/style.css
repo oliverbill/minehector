@@ -25,6 +25,26 @@ body { font-family: 'Courier New', monospace; user-select: none; }
 
 #toast.show { opacity: 1; }
 
+/* Submerso. A geometria da água já tinge a tela de azul quando a câmera entra
+   nela, mas azul sozinho é indistinguível de jogo quebrado — foi exatamente
+   assim que foi relatado. Esta camada dá moldura e, principalmente, diz como
+   sair: sem ela o jogador fica no fundo sem saber que o Espaço sobe. */
+#underwater {
+  position: fixed; inset: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center,
+    rgba(24, 86, 150, 0.10) 35%, rgba(14, 58, 110, 0.55) 100%);
+  opacity: 0; transition: opacity 0.25s;
+}
+
+#underwater.on { opacity: 1; }
+
+#underwater span {
+  position: absolute; top: 12%; left: 50%; transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.55); color: #cfe8ff;
+  border: 1px solid #4a7fae; border-radius: 4px;
+  padding: 6px 12px; font-size: 13px; white-space: nowrap;
+}
+
 #hotbar {
   position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
   display: flex; gap: 6px; pointer-events: none;
