@@ -34,6 +34,30 @@ python3 -m http.server 8080
 | Espaço (na água) | nadar para cima |
 | ESC | soltar o mouse |
 
+## No celular e no tablet
+
+**O jogo também se joga com o dedo** — iPhone, iPad e Android. O jogo nascia preso
+ao pointer lock, que no iPhone não existe e no iPad só funciona com trackpad: o
+"Clique para jogar" nunca sumia e o mundo ficava parado atrás dele. Agora, em tela
+de toque, o menu some ao primeiro toque e aparecem os controles:
+
+| Gesto | Ação |
+| --- | --- |
+| Manche na metade esquerda | andar — nasce onde o polegar pousa; até o fim, corre |
+| Arrastar na metade direita | olhar |
+| Tocar na metade direita | quebrar o bloco mirado |
+| ⤒ | pular (e nadar para cima, dentro da água) |
+| ✖ / ▣ | quebrar / colocar — segurando, repete |
+| ◉ | 1ª pessoa → 3ª → 3ª de frente |
+| ☰ | voltar ao menu (é o ESC do celular) |
+| Toque no hotbar | escolher o bloco |
+
+O hotbar sobe para o topo (embaixo moram os polegares) e vira só os ícones. A tela
+inteira é do jogo: sem zoom de dois dedos, sem puxão para recarregar e sem a barra
+de endereço comendo o rodapé. Em tela de toque o raio de visão cai de 4 para 3
+chunks e o render deixa de multiplicar pelos 3 pixels físicos do iPhone — é o que
+mantém o jogo fluido no aparelho.
+
 **O mundo muda de hora e de tempo.** Manhã, tarde e noite, 15 minutos cada, com o sol
 cruzando o céu, a lua e as estrelas de noite e nuvens passando. De vez em quando chove ou
 neva. A HUD mostra o período, quanto falta e o tempo.
@@ -95,7 +119,8 @@ js/
   constants.js   dimensões, ids de bloco, seed
   world/         ruído, geração de chunks, estado do mundo, saves (IndexedDB)
   render/        atlas procedural, mesher (face culling), cena e malhas por chunk
-  player/        input (pointer lock), física AABB, raycast DDA, interação
+  player/        input (pointer lock + toque), touch (manche e botões),
+                 física AABB, raycast DDA, interação
   bots/          FSM e corpos dos bots
   main.js        boot e game loop
 ```

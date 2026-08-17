@@ -1,10 +1,29 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+html { width: 100%; height: 100%; overflow: hidden; background: #000; }
 
-body { font-family: 'Courier New', monospace; user-select: none; }
+/* No iOS, `100vh` conta a barra de endereço que aparece e some — o rodapé do
+   jogo (hotbar, botões) nascia atrás dela. Corpo `fixed` preso à área realmente
+   visível resolve, e de quebra mata o puxão para recarregar. `touch-action:
+   none` tira zoom de dois dedos e duplo toque: num jogo o dedo mira, não amplia. */
+body {
+  position: fixed; inset: 0; overflow: hidden;
+  font-family: 'Courier New', monospace;
+  user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  touch-action: none;
+  overscroll-behavior: none;
+}
 
-#game { display: block; width: 100vw; height: 100vh; }
+#game { display: block; width: 100%; height: 100%; touch-action: none; }
+
+/* Instruções e avisos mudam com o aparelho: no celular não há Espaço nem botão
+   direito, e mandar apertar uma tecla que não existe é pior que não dizer nada. */
+.so-toque { display: none; }
+body.toque .so-mouse { display: none; }
+body.toque .so-toque { display: revert; }
 
 #crosshair {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
@@ -21,6 +40,7 @@ body { font-family: 'Courier New', monospace; user-select: none; }
   border: 1px solid #7a5c30; border-radius: 4px;
   padding: 7px 14px; font-size: 13px; white-space: nowrap;
   opacity: 0; transition: opacity 0.15s; pointer-events: none;
+  z-index: 9;
 }
 
 #toast.show { opacity: 1; }
@@ -46,7 +66,8 @@ body { font-family: 'Courier New', monospace; user-select: none; }
 }
 
 #hotbar {
-  position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+  position: fixed; bottom: calc(16px + env(safe-area-inset-bottom)); left: 50%;
+  transform: translateX(-50%);
   display: flex; gap: 6px; pointer-events: none;
 }
 
@@ -70,7 +91,10 @@ body { font-family: 'Courier New', monospace; user-select: none; }
 #hotbar .slot.active .sw { border-color: #fff; }
 
 #hud {
-  position: fixed; top: 10px; left: 10px; color: #fff;
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top));
+  left: calc(10px + env(safe-area-inset-left));
+  color: #fff;
   font-size: 13px; text-shadow: 1px 1px 2px #000; pointer-events: none;
 }
 
@@ -94,6 +118,8 @@ body { font-family: 'Courier New', monospace; user-select: none; }
   position: fixed; inset: 0; background: rgba(0, 0, 0, 0.65);
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; z-index: 10;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 #overlay.hidden { display: none; }
@@ -102,6 +128,7 @@ body { font-family: 'Courier New', monospace; user-select: none; }
   background: rgba(20, 20, 30, 0.9); color: #eee;
   border: 2px solid #667; border-radius: 8px;
   padding: 32px 48px; text-align: center;
+  max-width: 96vw; max-height: 96%; overflow-y: auto;
 }
 
 #overlay h1 { font-size: 32px; margin-bottom: 8px; letter-spacing: 2px; }
@@ -109,3 +136,106 @@ body { font-family: 'Courier New', monospace; user-select: none; }
 #overlay p { font-size: 18px; color: #9cf; margin-bottom: 16px; }
 
 #overlay ul { list-style: none; font-size: 13px; line-height: 2; color: #bbb; }
+
+/* ---------------------------------------------------------------------------
+   Controles de toque (js/player/touch.js)
+
+   Escondidos por padrão e ligados por `body.toque.jogando`: fora de uma tela de
+   toque eles não existem, e com o jogo pausado o overlay é que manda. Como o
+   `display: none` some com os elementos, nenhum evento de dedo chega ao jogo
+   enquanto o menu está aberto — não é preciso um segundo interruptor no JS.
+   --------------------------------------------------------------------------- */
+
+#touch { display: none; }
+body.toque.jogando #touch { display: block; }
+
+/* As duas metades da tela: esquerda anda, direita olha. Sem fundo — o polegar
+   sabe onde está, e uma barra opaca só tiraria mundo da vista. */
+#stick-zone, #look-zone {
+  position: fixed; top: 0; bottom: 0; z-index: 5;
+  touch-action: none;
+}
+
+#stick-zone { left: 0; width: 45%; }
+#look-zone { right: 0; width: 55%; }
+
+/* O manche nasce onde o polegar pousou (o JS move este círculo até lá). */
+#stick-base {
+  position: fixed; z-index: 6;
+  width: 112px; height: 112px; margin: -56px 0 0 -56px;
+  border: 2px solid rgba(255, 255, 255, 0.35); border-radius: 50%;
+  background: rgba(0, 0, 0, 0.25);
+  opacity: 0; transition: opacity 0.12s; pointer-events: none;
+}
+
+#stick-base.on { opacity: 1; }
+
+#stick-knob {
+  position: absolute; left: 50%; top: 50%;
+  width: 52px; height: 52px; transform: translate(-50%, -50%);
+  border: 2px solid rgba(255, 255, 255, 0.7); border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+#botoes {
+  position: fixed; z-index: 7;
+  right: calc(14px + env(safe-area-inset-right));
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(3, 60px);
+  grid-template-rows: repeat(2, 60px);
+}
+
+/* Pular ocupa a coluna inteira do canto: é o botão mais apertado do jogo, e o
+   polegar direito cai ali sem procurar. */
+.tbtn[data-action="visao"]   { grid-area: 1 / 1; }
+.tbtn[data-action="menu"]    { grid-area: 1 / 2; }
+.tbtn[data-action="quebrar"] { grid-area: 2 / 1; }
+.tbtn[data-action="colocar"] { grid-area: 2 / 2; }
+.tbtn[data-action="pular"]   { grid-area: 1 / 3 / 3 / 4; }
+
+.tbtn {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px;
+  font: inherit; font-size: 22px; line-height: 1; color: #eee;
+  background: rgba(0, 0, 0, 0.45);
+  border: 2px solid rgba(255, 255, 255, 0.45); border-radius: 14px;
+  touch-action: none; -webkit-tap-highlight-color: transparent;
+}
+
+.tbtn span { font-size: 9px; color: #cfcfd6; letter-spacing: 0.5px; }
+
+.tbtn.press { background: rgba(255, 255, 255, 0.3); border-color: #fff; }
+
+/* Hotbar no celular: sobe para o topo (embaixo é onde moram os polegares),
+   encolhe para as nove caberem na largura de um iPhone e passa a receber toque —
+   sem teclas 1–9, tocar no slot é o único jeito de escolher o bloco. Esticada de
+   ponta a ponta, e não `left: 50%` + `translateX(-50%)`: assim posicionada, ela
+   só tinha meia tela para se ajeitar e quebrava em duas linhas sobre a HUD. */
+body.toque #hotbar {
+  top: calc(6px + env(safe-area-inset-top)); bottom: auto;
+  left: 0; right: 0; transform: none;
+  z-index: 8; pointer-events: auto;
+  flex-wrap: wrap; justify-content: center;
+  gap: 4px;
+}
+
+/* 32 px por peça: as nove somam 320 e cabem numa linha só até no iPhone mais
+   estreito em pé. Quebrando em duas linhas, o hotbar tapava a HUD. */
+body.toque #hotbar .slot {
+  min-width: 0; padding: 3px; font-size: 0;
+  border-width: 2px; border-radius: 6px;
+}
+
+body.toque #hotbar .key, body.toque #hotbar .nome { display: none; }
+
+body.toque #hotbar .sw { width: 22px; height: 22px; margin: 0; }
+
+/* Com o hotbar no topo, a HUD desce para não ficar por baixo dele — em retrato
+   as nove peças quebram em duas linhas e cobririam as quatro linhas de estado. */
+body.toque #hud {
+  top: calc(48px + env(safe-area-inset-top));
+  font-size: 11px;
+}
+
+body.toque #underwater span { top: 26%; }

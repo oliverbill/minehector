@@ -8,15 +8,30 @@ import { createAtlas } from './render/atlas.js';
 import { Sky } from './render/sky.js';
 import { Weather } from './render/weather.js';
 import { Input } from './player/input.js';
+import { TouchControls, isTouchDevice } from './player/touch.js';
 import { Player } from './player/player.js';
 import { Interaction } from './player/interaction.js';
 import { View, MODE_NAMES } from './player/view.js';
 import { BotManager } from './bots/botManager.js';
 
 async function boot() {
-  await openStorage();
-  const { blocks, owners } = await loadAllDiffs();
-  const world = new World(WORLD_SEED, blocks, owners);
+  // O jogo tem de rodar mesmo sem IndexedDB. No Safari em navegação privada (e
+  // às vezes num iPhone com pouco espaço) abrir o banco falha, e um throw aqui
+  // trocava o jogo inteiro pela tela de erro: perder o save é ruim, não poder
+  // jogar é pior. Sem banco, `flushDiffs` e `saveVillage` já são no-op.
+  let salvos = { blocks: new Map(), owners: new Map() };
+  let aldeiaSalva = null;
+  let semSave = false;
+  try {
+    await openStorage();
+    salvos = await loadAllDiffs();
+    aldeiaSalva = await loadVillage();
+  } catch (err) {
+    console.error('sem persistência neste navegador:', err);
+    semSave = true;
+  }
+
+  const world = new World(WORLD_SEED, salvos.blocks, salvos.owners);
 
   const canvas = document.getElementById('game');
   const { renderer, scene, camera, sun, ambient } = createScene(canvas);
@@ -36,7 +51,7 @@ async function boot() {
   const input = new Input(canvas);
   const interaction = new Interaction(world, player, scene, input);
   const view = new View(world, player, scene, input, (mode) => interaction.say(MODE_NAMES[mode]));
-  const bots = new BotManager(scene, world, 3, await loadVillage());
+  const bots = new BotManager(scene, world, 3, aldeiaSalva);
   // Mudança de tempo vira recado: sem aviso, começar a nevar é indistinguível
   // de um defeito de render.
   weather.onChange = (tipo) => {
@@ -50,8 +65,63 @@ async function boot() {
     saveVillage(bots.village.serialize()).catch((err) => console.error('saveVillage:', err));
   };
 
+  // Toque no slot escolhe o bloco. É o único caminho no celular (não há teclas
+  // 1–9) e não atrapalha no desktop: com o mouse preso, o hotbar não recebe
+  // evento nenhum.
+  for (const slot of document.querySelectorAll('#hotbar .slot')) {
+    slot.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      interaction.selectBlock(Number(slot.dataset.block));
+    });
+  }
+
   const overlay = document.getElementById('overlay');
-  overlay.addEventListener('click', () => canvas.requestPointerLock());
+
+  // Duas formas de estar no comando: pointer lock (mouse) ou dedo. No iPhone só
+  // existe a segunda — `requestPointerLock` lá não faz nada e nem sempre avisa,
+  // então nem se pede: o toque no overlay já começa o jogo.
+  const toque = isTouchDevice();
+  if (toque) document.body.classList.add('toque');
+  const touchControls = toque ? new TouchControls(input, { onMenu: () => pausar() }) : null;
+
+  function jogar() {
+    // O recado do save só cabe agora: dito no boot, ele nasce atrás do overlay.
+    if (semSave) {
+      semSave = false;
+      interaction.say('este navegador não guarda o mundo — nada será salvo');
+    }
+    if (toque) {
+      input.touchActive = true;
+      document.body.classList.add('jogando');
+      overlay.classList.add('hidden');
+      return;
+    }
+    // Chrome novo devolve Promise e rejeita quando o lock é negado (por exemplo
+    // logo depois de um ESC); Safari devolve undefined. Sem o catch, a rejeição
+    // vira erro não tratado no console e assusta quem for depurar.
+    const pedido = canvas.requestPointerLock && canvas.requestPointerLock();
+    if (pedido && typeof pedido.catch === 'function') pedido.catch(() => {});
+  }
+
+  // O ESC do celular é o botão ☰: sem teclado, sem isto não havia como voltar ao
+  // menu (nem chegar ao botão de recomeçar o mundo).
+  function pausar() {
+    input.touchActive = false;
+    if (touchControls) touchControls.reset();
+    document.body.classList.remove('jogando');
+    overlay.classList.remove('hidden');
+  }
+
+  overlay.addEventListener('click', jogar);
+  // No iOS o `click` num div só vem depois de todo o gesto e às vezes não vem;
+  // o touchend é o que responde na hora. O preventDefault evita o clique
+  // fantasma logo em seguida — menos no botão de recomeçar, que precisa dele.
+  overlay.addEventListener('touchend', (e) => {
+    if (e.target.closest && e.target.closest('#reset')) return;
+    e.preventDefault();
+    jogar();
+  });
 
   // Recomeçar: apaga blocos e aldeia e recarrega. stopPropagation porque o
   // clique no overlay pede o pointer lock, e travar o mouse ao apagar o mundo
@@ -103,7 +173,7 @@ async function boot() {
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
 
-    if (input.locked) {
+    if (input.active) {
       player.update(dt, input);
       interaction.update();
     }

@@ -95,7 +95,7 @@ Duas geometrias porque a água é translúcida e precisa de material próprio e 
 
 ### renderer.js
 ```js
-export function createScene(canvas) // -> { renderer, scene, camera }
+export function createScene(canvas) // -> { renderer, scene, camera, sun, ambient }
 // WebGLRenderer antialias, céu azul, fog linear casando com RENDER_RADIUS,
 // luz ambiente + direcional, camera PerspectiveCamera fov 75 near 0.1 far 400,
 // resize handler embutido
@@ -105,6 +105,18 @@ export class ChunkRenderer {
   update(playerPos)                 // playerPos = {x, y, z}
 }
 ```
+**O tamanho vem do CSS, não do `window`.** O canvas mede 100% de um corpo preso à
+área visível, e `createScene` lê `clientWidth`/`clientHeight` de volta — no iOS,
+`window.innerHeight` conta a barra de endereço que aparece e some, e o jogo
+renderizava mais alto que a tela, com o rodapé (hotbar e botões) por baixo dela.
+Além do `resize`, ouve-se `orientationchange` (o Safari só reporta o tamanho novo um
+instante depois, então mede-se duas vezes) e `visualViewport.resize`, que é o único
+aviso quando a barra sobe ou desce. Em tela de toque (`pointer: coarse`), o
+antialias sai e o pixel ratio é limitado a 1,5: o iPhone tem `devicePixelRatio` 3, e
+render nove vezes maior que o necessário é o que sobra de framerate.
+`RENDER_RADIUS` (constants.js) também cai de 4 para 3 no celular — 49 chunks em vez
+de 81, e névoa e céu acompanham porque saem daquela mesma constante.
+
 `update`: garante meshes dos chunks no raio (fila com orçamento ~2 chunks/frame, mais perto primeiro), re-mesheia os de `world.dirty` (prioridade máxima, consome e limpa o set), remove+dispose meshes além de RENDER_RADIUS+1. Um `THREE.Mesh` por chunk, material único com a textura do atlas.
 
 ### sky.js e weather.js — hora do dia e tempo
@@ -137,13 +149,68 @@ As partículas do clima vivem numa caixa que anda com o jogador e reciclam quem 
 ```js
 export class Input {
   constructor(canvas)     // pointer lock ao clicar no canvas; ESC solta (nativo)
-  isDown(code)            // ex.: isDown('KeyW'), por event.code
+  isDown(code)            // ex.: isDown('KeyW'), por event.code — teclado OU tecla virtual
   consumeMouseDelta()     // -> { dx, dy } acumulado desde a última chamada, e zera
   onMouseButton(cb)       // cb(button) em mousedown SÓ quando pointer-locked (0 esq, 2 dir)
   onKeyPress(cb)          // cb(code) em keydown sem repeat
   get locked()            // pointer lock ativo?
+  get active()            // pointer lock OU toque: é isto que o loop pergunta
+
+  // o que o toque injeta (js/player/touch.js), e mais ninguém usa:
+  setVirtualKey(code, down)   // tecla segurada sem teclado (o botão de pular é 'Space')
+  addLook(dx, dy)             // arrasto do dedo no mesmo acumulador do mouse
+  emitMouseButton(button)     // clique virtual pelo caminho do mousedown
+  emitKeyPress(code)          // tecla virtual de um toque só
+  setStick(forward, strafe)   // manche analógico em [-1,1]; get stick -> {forward,strafe}|null
+  set touchActive(v)          // entra/sai do comando pelo dedo; sair solta tudo que estava preso
 }
 ```
+
+**Duas fontes de comando, uma só interface.** `locked` continua sendo pointer lock
+de verdade e nada mais; quem quer saber se o jogador está jogando pergunta `active`.
+Player, Interaction e View não sabem se o que chegou veio de teclado, mouse ou dedo
+— o toque escreve pelo mesmo `isDown`/`consumeMouseDelta`/callbacks de sempre.
+
+### touch.js — iPhone, iPad e Android
+```js
+export class TouchControls {
+  constructor(input, { onMenu })  // liga as zonas e os botões de #touch no Input
+  reset()                         // pausar no meio de um gesto não deixa dedo pendurado
+}
+export function stickVector(dx, dy, radius)  // -> { forward, strafe, run, dx, dy }
+export function isTouchDevice()
+export const STICK_RADIUS
+```
+
+O jogo nascia preso ao pointer lock. **No iPhone ele não existe** (no iPad, só com
+trackpad): `requestPointerLock()` não fazia nada, `pointerlockchange` nunca vinha,
+o overlay não sumia e `input.locked` ficava falso para sempre — o mundo renderizava
+parado atrás do menu. Sem teclado não havia WASD, e sem botão direito não havia como
+colocar bloco: faltavam todos os comandos, não um.
+
+Metade esquerda anda (manche que nasce onde o polegar pousa; empurrado além de
+`RUN_AT` vira `ShiftLeft` e corre), metade direita olha, e o toque curto e parado
+dessa metade é clique esquerdo — mirar e quebrar são o mesmo gesto na cabeça de quem
+joga. Botões de pular (tecla virtual `Space`, segurada), quebrar e colocar (repetem
+enquanto apertados: um bloco por toque transformaria cavar em dezenas de toques),
+trocar de câmera e voltar ao menu — este último é o ESC do celular, sem ele não há
+como reabrir o painel nem chegar ao botão de recomeçar o mundo.
+
+**O gesto começa no elemento e termina na janela.** `pointerdown` é ouvido na zona
+(ou no botão), mas `pointermove`/`pointerup`/`pointercancel` vão no `window`: o
+polegar cruza a divisa das metades e escorrega para fora dos botões o tempo todo, e
+um `pointerup` perdido significa jogador andando sozinho ou pulo preso para sempre.
+`setPointerCapture` resolveria o mesmo, mas lança quando o ponteiro já sumiu — e a
+exceção mataria o handler antes da ação.
+
+`stickVector` é pura de propósito: é a única parte testável sem tela nem dedo, e é
+onde mora a regra de que meio empurrão anda meia velocidade. O `Player` soma o
+manche ao teclado e normaliza com `min(len, 1) / len` — a diagonal do teclado
+continua não sendo mais rápida, e a força intermediária do analógico é respeitada.
+
+A camada visual (`#touch` no HTML, `.tbtn` no CSS) só existe com `body.toque.jogando`:
+o `display: none` fora disso garante que nenhum evento de dedo chegue ao jogo com o
+menu aberto, sem um segundo interruptor no JS.
 
 ### physics.js
 ```js
@@ -273,9 +340,20 @@ FSM: `idle` (2–4s) → `build` (procura sítio; sem terreno, volta a vaguear) 
 ```
 openStorage → loadAllDiffs → new World → createScene → createAtlas → ChunkRenderer
 → spawn em (8.5, surfaceHeight+1, 8.5) → Player, Input, Interaction, BotManager(3)
+→ TouchControls (só em tela de toque)
 → loop rAF: dt clampado a 0.05s; player.update, interaction.update, bots.update,
   chunkRenderer.update, view.update (boneco + câmera), render
 ```
+
+O loop anda quando `input.active` — pointer lock **ou** dedo. Começar o jogo é pedir
+o lock (mouse) ou marcar `touchActive` e esconder o overlay (toque); o `touchend` do
+overlay é tratado além do `click` porque no iOS o clique num div vem tarde e às
+vezes não vem.
+
+**Sem IndexedDB o jogo roda assim mesmo.** Abrir o banco falha no Safari em navegação
+privada, e o `throw` no boot trocava o jogo inteiro pela tela de erro. Perder o save
+é ruim; não poder jogar é pior: as três chamadas de carga ficam num `try`, o mundo
+nasce vazio de diffs e o jogador é avisado por toast quando entra.
 
 ## tests/ — regressão da interação
 
@@ -290,3 +368,11 @@ node tests/run.mjs      # sem dependências, sem package.json; sai != 0 se algo 
 Cobertura, em ordem do que dói mais perder: coluna à frente passa de 2 blocos (o bug), sobe de qualquer distância (0 a 2 blocos de folga), sobe acima da cabeça sem virar bloco solto ao lado, mirar a metade de baixo continua colocando ao lado, topo ocupado não sobrescreve, clique sem lugar é recusado, nenhum ângulo coloca bloco dentro do jogador (varredura de yaw × pitch), faces de cima e de baixo nunca sobem, pilar por pulo continua subindo, quebrar continua quebrando o bloco mirado, e o contrato do raycast (`t` cai no plano da face, `prev` = `block + normal` e nunca é sólida).
 
 Verificado que a suíte acusa: desligando `_isSideFace`, caem os 3 testes de empilhar e mais nenhum.
+
+`touch.test.mjs` cobre o que dá para afirmar sem tela nem dedo, que é justamente o
+que estava quebrado: a conta do manche (zona morta, frente é para cima, corrida no
+fim do curso, força cheia limitada a 1), o Input assumindo o comando **sem** pointer
+lock, a tecla virtual do pular tirando o jogador do chão, o arrasto virando olhada, o
+clique virtual quebrando o bloco mirado, o hotbar tocável escolhendo bloco pelo mesmo
+caminho das teclas 1–9, e pausar soltando tudo que o dedo segurava. O `Input` real é
+usado (não um dublê): o `stubDom` do harness ganhou `addEventListener` para isso.

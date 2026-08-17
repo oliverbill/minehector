@@ -59,12 +59,18 @@ export class Interaction {
 
     input.onKeyPress((code) => {
       const match = /^Digit([1-9])$/.exec(code);
-      if (!match) return;
-      this.selectedBlock = Number(match[1]); // Digit1..Digit9 -> ids 1..9
-      for (const slot of document.querySelectorAll('#hotbar .slot')) {
-        slot.classList.toggle('active', Number(slot.dataset.block) === this.selectedBlock);
-      }
+      if (match) this.selectBlock(Number(match[1])); // Digit1..Digit9 -> ids 1..9
     });
+  }
+
+  // Escolhe o bloco do hotbar. Público porque no celular não há teclas 1–9: o
+  // dedo bate direto no slot, e o caminho tem de ser o mesmo do teclado — senão
+  // uma das duas entradas acerta o bloco e esquece de acender o slot.
+  selectBlock(id) {
+    this.selectedBlock = id;
+    for (const slot of document.querySelectorAll('#hotbar .slot')) {
+      slot.classList.toggle('active', Number(slot.dataset.block) === id);
+    }
   }
 
   // Recado curto no centro da tela. Sem isto, uma recusa é indistinguível de

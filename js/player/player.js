@@ -42,11 +42,22 @@ export class Player {
     if (input.isDown('KeyD')) strafe += 1;
     if (input.isDown('KeyA')) strafe -= 1;
 
+    // Manche do toque, quando há um: soma ao teclado e, ao contrário dele, tem
+    // meio-termo — empurrado pela metade, anda pela metade.
+    const stick = input.stick;
+    if (stick) {
+      forward += stick.forward;
+      strafe += stick.strafe;
+    }
+
     const speed = input.isDown('ShiftLeft') ? RUN_SPEED : WALK_SPEED;
     if (forward !== 0 || strafe !== 0) {
-      const len = Math.hypot(forward, strafe); // normaliza a diagonal
-      const f = forward / len;
-      const s = strafe / len;
+      // Normaliza a diagonal do teclado sem apagar a força do analógico: o que
+      // passa de 1 é cortado, o que está abaixo é respeitado.
+      const len = Math.hypot(forward, strafe);
+      const escala = Math.min(len, 1) / len;
+      const f = forward * escala;
+      const s = strafe * escala;
       const sinY = Math.sin(this.yaw);
       const cosY = Math.cos(this.yaw);
       // frente = (-sin, -cos); direita = (cos, -sin)

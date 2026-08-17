@@ -8,10 +8,28 @@ import { buildChunkMesh } from './mesher.js';
 const SKY_COLOR = 0x87ceeb;
 const MESH_BUDGET_PER_UPDATE = 2; // chunks novos mesheados por chamada de update
 
+// Tela de toque? Não é sobre o dedo aqui, é sobre a GPU e a barra de endereço
+// que vêm junto com ele.
+const COARSE = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+  && window.matchMedia('(pointer: coarse)').matches;
+
 export function createScene(canvas) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  // Quem dá o tamanho é o CSS (canvas a 100% de um corpo preso à área visível) e
+  // aqui só se lê de volta. `window.innerHeight` no iOS conta a barra de endereço
+  // que aparece e some, então o jogo renderizava mais alto que a tela e o rodapé
+  // — hotbar e botões — ficava por baixo da barra.
+  const size = () => ({
+    w: canvas.clientWidth || window.innerWidth,
+    h: canvas.clientHeight || window.innerHeight,
+  });
+
+  // O iPhone tem devicePixelRatio 3: render nove vezes maior que o necessário,
+  // com antialias por cima, é o que sobra de framerate. Num celular a nitidez
+  // extra não se vê; a queda para 15 fps, sim.
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !COARSE });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, COARSE ? 1.5 : 2));
+  const inicial = size();
+  renderer.setSize(inicial.w, inicial.h, false);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(SKY_COLOR);
@@ -29,14 +47,24 @@ export function createScene(canvas) {
   scene.add(sun);
 
   const camera = new THREE.PerspectiveCamera(
-    75, window.innerWidth / window.innerHeight, 0.1, 400,
+    75, inicial.w / inicial.h, 0.1, 400,
   );
 
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
+  function resize() {
+    const { w, h } = size();
+    if (!w || !h) return;   // aba escondida devolve 0, e aspect 0 estoura a matriz
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight, false);
-  });
+    renderer.setSize(w, h, false);
+  }
+
+  window.addEventListener('resize', resize);
+  // Girar o aparelho: o Safari só reporta o tamanho novo um instante depois do
+  // evento, e medir na hora deixa o jogo esticado até o próximo resize.
+  window.addEventListener('orientationchange', () => { resize(); setTimeout(resize, 300); });
+  // Barra de endereço subindo e descendo muda a área visível sem disparar
+  // `resize` nenhum no iOS — quem avisa é o visualViewport.
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
 
   return { renderer, scene, camera, sun, ambient };
 }

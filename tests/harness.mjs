@@ -20,6 +20,9 @@ export function stubDom() {
   globalThis.document = {
     getElementById: () => null,
     querySelectorAll: () => [],
+    // A Input de verdade se registra no documento; sem isto ela não pode ser
+    // testada fora do browser, e é ela que recebe o que o toque injeta.
+    addEventListener: () => {},
     createElement: (tag) => {
       if (tag !== 'canvas') return {};
       const ops = [];

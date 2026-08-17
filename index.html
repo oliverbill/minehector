@@ -2,7 +2,14 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- viewport-fit=cover para o jogo ir até a borda no iPhone (o CSS devolve o
+       espaço do notch com env(safe-area-inset-*)); user-scalable=no porque num
+       jogo o duplo toque tem de mirar, não dar zoom. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#87ceeb">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Minehector</title>
   <link rel="stylesheet" href="css/style.css">
   <script type="importmap">
@@ -16,18 +23,21 @@
 
   <div id="toast"></div>
 
-  <div id="underwater"><span>Submerso — <b>Espaço</b> para subir</span></div>
+  <div id="underwater">
+    <span class="so-mouse">Submerso — <b>Espaço</b> para subir</span>
+    <span class="so-toque">Submerso — <b>⤒</b> para subir</span>
+  </div>
 
   <div id="hotbar">
-    <div class="slot active" data-block="1"><span class="key">1</span><span class="sw"></span>Grama</div>
-    <div class="slot" data-block="2"><span class="key">2</span><span class="sw"></span>Terra</div>
-    <div class="slot" data-block="3"><span class="key">3</span><span class="sw"></span>Pedra</div>
-    <div class="slot" data-block="4"><span class="key">4</span><span class="sw"></span>Areia</div>
-    <div class="slot" data-block="5"><span class="key">5</span><span class="sw"></span>Madeira</div>
-    <div class="slot" data-block="6"><span class="key">6</span><span class="sw"></span>Folhas</div>
-    <div class="slot" data-block="7"><span class="key">7</span><span class="sw"></span>Água</div>
-    <div class="slot" data-block="8"><span class="key">8</span><span class="sw"></span>Lava</div>
-    <div class="slot" data-block="9"><span class="key">9</span><span class="sw"></span>Fogo</div>
+    <div class="slot active" data-block="1"><span class="key">1</span><span class="sw"></span><span class="nome">Grama</span></div>
+    <div class="slot" data-block="2"><span class="key">2</span><span class="sw"></span><span class="nome">Terra</span></div>
+    <div class="slot" data-block="3"><span class="key">3</span><span class="sw"></span><span class="nome">Pedra</span></div>
+    <div class="slot" data-block="4"><span class="key">4</span><span class="sw"></span><span class="nome">Areia</span></div>
+    <div class="slot" data-block="5"><span class="key">5</span><span class="sw"></span><span class="nome">Madeira</span></div>
+    <div class="slot" data-block="6"><span class="key">6</span><span class="sw"></span><span class="nome">Folhas</span></div>
+    <div class="slot" data-block="7"><span class="key">7</span><span class="sw"></span><span class="nome">Água</span></div>
+    <div class="slot" data-block="8"><span class="key">8</span><span class="sw"></span><span class="nome">Lava</span></div>
+    <div class="slot" data-block="9"><span class="key">9</span><span class="sw"></span><span class="nome">Fogo</span></div>
   </div>
 
   <div id="hud">
@@ -37,15 +47,38 @@
     <div id="aldeia"></div>
   </div>
 
+  <!-- Controles de toque. Só aparecem em tela de toque e com o jogo rodando
+       (`body.toque.jogando`) — num desktop seriam sujeira sobre a tela. -->
+  <div id="touch">
+    <div id="stick-zone"></div>
+    <div id="look-zone"></div>
+    <div id="stick-base"><div id="stick-knob"></div></div>
+    <div id="botoes">
+      <button class="tbtn" data-action="visao" type="button">◉<span>visão</span></button>
+      <button class="tbtn" data-action="menu" type="button">☰<span>menu</span></button>
+      <button class="tbtn" data-action="colocar" type="button">▣<span>colocar</span></button>
+      <button class="tbtn" data-action="quebrar" type="button">✖<span>quebrar</span></button>
+      <button class="tbtn grande" data-action="pular" type="button">⤒<span>pular</span></button>
+    </div>
+  </div>
+
   <div id="overlay">
     <div class="panel">
       <h1>Minehector</h1>
-      <p>Clique para jogar</p>
-      <ul>
+      <p class="so-mouse">Clique para jogar</p>
+      <p class="so-toque">Toque para jogar</p>
+      <ul class="so-mouse">
         <li><b>WASD</b> andar &nbsp;·&nbsp; <b>Espaço</b> pular &nbsp;·&nbsp; <b>Shift</b> correr</li>
         <li><b>Botão esq.</b> quebrar &nbsp;·&nbsp; <b>Botão dir.</b> colocar</li>
         <li><b>1–9</b> escolher bloco &nbsp;·&nbsp; <b>V</b> 1ª/3ª pessoa &nbsp;·&nbsp; <b>ESC</b> soltar o mouse</li>
         <li><b>7</b> é água: cave um buraco, encha e pule dentro — <b>Espaço</b> nada para cima</li>
+      </ul>
+      <ul class="so-toque">
+        <li><b>Manche</b> na metade esquerda anda — até o fim, corre</li>
+        <li><b>Arraste</b> na metade direita para olhar &nbsp;·&nbsp; <b>toque</b> quebra o bloco mirado</li>
+        <li><b>⤒</b> pular &nbsp;·&nbsp; <b>▣</b> colocar &nbsp;·&nbsp; <b>✖</b> quebrar &nbsp;·&nbsp; <b>◉</b> trocar de câmera</li>
+        <li><b>Toque no hotbar</b> escolhe o bloco &nbsp;·&nbsp; <b>☰</b> volta a este menu</li>
+        <li>Água é o bloco 7: cave, encha e pule dentro — <b>⤒</b> nada para cima</li>
       </ul>
       <button id="reset" type="button">recomeçar o mundo</button>
     </div>

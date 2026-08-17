@@ -69,7 +69,13 @@ export const BLOCK_NAMES = [
 
 export const WORLD_SEED = 1337;
 
-export const RENDER_RADIUS = 4;   // raio de visão, em chunks
+// Raio de visão, em chunks. No celular cai para 3 — 49 chunks em vez de 81. A
+// névoa e o céu saem daqui, então o mundo continua coerente consigo mesmo; o que
+// muda é o Safari do iPhone não passar o dia mesheando nem estourar a memória da
+// aba (que ele resolve descartando o contexto WebGL, ou seja, tela preta).
+export const RENDER_RADIUS =
+  (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    && window.matchMedia('(pointer: coarse)').matches) ? 3 : 4;
 export const GRAVITY = 24;        // blocos/s²
 
 export const chunkKey = (cx, cz) => `${cx},${cz}`;
