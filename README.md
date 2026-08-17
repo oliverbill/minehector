@@ -1,4 +1,4 @@
-# CuboCraft
+# Minehector
 
 Jogo voxel estilo Minecraft, single-player, que roda inteiro no navegador — sem servidor,
 sem build step, sem dependências além do Three.js vendorado em `lib/`.
