@@ -20,7 +20,10 @@ export function createScene(canvas) {
   const viewDist = RENDER_RADIUS * CHUNK_SIZE;
   scene.fog = new THREE.Fog(SKY_COLOR, viewDist * 0.6, viewDist * 0.95);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+  // Luzes devolvidas junto: quem manda nelas é o céu (js/render/sky.js), que
+  // muda cor e intensidade conforme a hora do dia.
+  const ambient = new THREE.AmbientLight(0xffffff, 0.65);
+  scene.add(ambient);
   const sun = new THREE.DirectionalLight(0xffffff, 0.8);
   sun.position.set(0.6, 1.0, 0.4); // direção fixa (luz direcional usa a posição como direção)
   scene.add(sun);
@@ -35,7 +38,7 @@ export function createScene(canvas) {
     renderer.setSize(window.innerWidth, window.innerHeight, false);
   });
 
-  return { renderer, scene, camera };
+  return { renderer, scene, camera, sun, ambient };
 }
 
 export class ChunkRenderer {

@@ -24,5 +24,6 @@ await import('./bots.test.mjs');
 await import('./ownership.test.mjs');
 await import('./view.test.mjs');
 await import('./water.test.mjs');
+await import('./sky.test.mjs');
 
 process.exit((await runAll()) === 0 ? 0 : 1);

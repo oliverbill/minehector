@@ -5,6 +5,8 @@ import {
 import { World } from './world/world.js';
 import { createScene, ChunkRenderer } from './render/renderer.js';
 import { createAtlas } from './render/atlas.js';
+import { Sky } from './render/sky.js';
+import { Weather } from './render/weather.js';
 import { Input } from './player/input.js';
 import { Player } from './player/player.js';
 import { Interaction } from './player/interaction.js';
@@ -17,7 +19,9 @@ async function boot() {
   const world = new World(WORLD_SEED, blocks, owners);
 
   const canvas = document.getElementById('game');
-  const { renderer, scene, camera } = createScene(canvas);
+  const { renderer, scene, camera, sun, ambient } = createScene(canvas);
+  const sky = new Sky(scene, sun, ambient);
+  const weather = new Weather(scene);
   const atlas = createAtlas();
   const chunkRenderer = new ChunkRenderer(scene, world, atlas);
 
@@ -33,6 +37,12 @@ async function boot() {
   const interaction = new Interaction(world, player, scene, input);
   const view = new View(world, player, scene, input, (mode) => interaction.say(MODE_NAMES[mode]));
   const bots = new BotManager(scene, world, 3, await loadVillage());
+  // Mudança de tempo vira recado: sem aviso, começar a nevar é indistinguível
+  // de um defeito de render.
+  weather.onChange = (tipo) => {
+    interaction.say(tipo === 'limpo' ? 'o tempo abriu' : `começou a ${tipo === 'chuva' ? 'chover' : 'nevar'}`);
+  };
+
   // A aldeia vai para o disco quando uma obra fica pronta — poucas vezes por
   // sessão. Assim, ao voltar, os bots sabem o que já existe e levantam só o que
   // falta, em vez de recomeçar as seis por cima das casas de ontem.
@@ -65,12 +75,16 @@ async function boot() {
   // lock não é concedido a cliques automatizados, então sem isto não há como
   // testar quebrar/colocar bloco num navegador controlado.
   if (location.hash === '#debug') {
-    window.__game = { world, player, input, interaction, view, chunkRenderer, bots, camera, scene };
+    window.__game = {
+      world, player, input, interaction, view, chunkRenderer, bots,
+      camera, scene, sky, weather,
+    };
   }
 
   const fpsEl = document.getElementById('fps');
   const posEl = document.getElementById('pos');
   const aldeiaEl = document.getElementById('aldeia');
+  const relogioEl = document.getElementById('relogio');
   let fpsAcc = 0, fpsFrames = 0;
 
   // Seta para a construção mais próxima, relativa a para onde você está olhando.
@@ -95,6 +109,8 @@ async function boot() {
     }
     bots.update(dt, player.pos);
     chunkRenderer.update(player.pos);
+    weather.update(dt, player.pos);
+    sky.update(dt, player.pos, weather.darkness);
     view.update(dt, camera);
 
     renderer.render(scene, camera);
@@ -104,6 +120,12 @@ async function boot() {
       fpsEl.textContent = `${Math.round(fpsFrames / fpsAcc)} fps`;
       posEl.textContent =
         `x ${player.pos.x.toFixed(1)}  y ${player.pos.y.toFixed(1)}  z ${player.pos.z.toFixed(1)}`;
+
+      if (relogioEl) {
+        const faltam = Math.ceil(sky.untilNext / 60);
+        relogioEl.textContent = `${sky.phase} · ${faltam} min`
+          + (weather.kind === 'limpo' ? '' : ` · ${weather.kind}`);
+      }
 
       if (aldeiaEl) {
         const perto = bots.village.nearest(player.pos.x, player.pos.z);

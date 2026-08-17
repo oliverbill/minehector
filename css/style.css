@@ -78,6 +78,9 @@ body { font-family: 'Courier New', monospace; user-select: none; }
    Amarelo porque é a única linha da HUD que pede ação — as outras são estado. */
 #aldeia { margin-top: 4px; color: #ffd9a0; }
 
+/* Hora do dia e tempo: estado, não chamado à ação — por isso discreto. */
+#relogio { margin-top: 4px; color: #b9d2e8; }
+
 /* Discreto de propósito: apaga o mundo, e ninguém deve clicar sem querer. */
 #reset {
   margin-top: 14px; padding: 5px 12px; font: inherit; font-size: 12px;
