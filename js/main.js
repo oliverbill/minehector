@@ -83,7 +83,23 @@ async function boot() {
   // então nem se pede: o toque no overlay já começa o jogo.
   const toque = isTouchDevice();
   if (toque) document.body.classList.add('toque');
-  const touchControls = toque ? new TouchControls(input, { onMenu: () => pausar() }) : null;
+
+  // Navegador sem pointer lock nenhum também entra pelo caminho do toque: seja
+  // qual for o motivo de não haver lock, começar o jogo é melhor que ficar preso
+  // na tela inicial — que é o defeito que se está consertando.
+  const semLock = toque || typeof canvas.requestPointerLock !== 'function';
+
+  let touchControls = null;
+  // Um erro montando os controles de toque não pode derrubar o boot: sem este
+  // try, uma exceção aqui levaria o jogo inteiro para a tela de erro e o
+  // sintoma voltaria a ser "não passa da tela inicial".
+  if (toque) {
+    try {
+      touchControls = new TouchControls(input, { onMenu: () => pausar() });
+    } catch (err) {
+      console.error('controles de toque:', err);
+    }
+  }
 
   function jogar() {
     // O recado do save só cabe agora: dito no boot, ele nasce atrás do overlay.
@@ -91,9 +107,9 @@ async function boot() {
       semSave = false;
       interaction.say('este navegador não guarda o mundo — nada será salvo');
     }
-    if (toque) {
+    if (semLock) {
       input.touchActive = true;
-      document.body.classList.add('jogando');
+      if (toque) document.body.classList.add('jogando');
       overlay.classList.add('hidden');
       return;
     }
@@ -113,15 +129,19 @@ async function boot() {
     overlay.classList.remove('hidden');
   }
 
-  overlay.addEventListener('click', jogar);
-  // No iOS o `click` num div só vem depois de todo o gesto e às vezes não vem;
-  // o touchend é o que responde na hora. O preventDefault evita o clique
-  // fantasma logo em seguida — menos no botão de recomeçar, que precisa dele.
-  overlay.addEventListener('touchend', (e) => {
-    if (e.target.closest && e.target.closest('#reset')) return;
-    e.preventDefault();
+  // Três portas para a mesma sala, e `jogar()` é idempotente de propósito. No
+  // iOS o `click` num div só vem depois de todo o gesto e às vezes não vem; o
+  // `touchend` responde na hora, e o `pointerup` cobre quem não emite nem um nem
+  // outro. Ficar preso na tela inicial é o defeito que se está consertando —
+  // vale mais tentar três vezes que confiar num evento só.
+  const abrir = (e) => {
+    if (e.target && e.target.closest && e.target.closest('#reset')) return;
+    if (e.cancelable && e.type === 'touchend') e.preventDefault(); // mata o clique fantasma
     jogar();
-  });
+  };
+  overlay.addEventListener('click', abrir);
+  overlay.addEventListener('pointerup', abrir);
+  overlay.addEventListener('touchend', abrir, { passive: false });
 
   // Recomeçar: apaga blocos e aldeia e recarrega. stopPropagation porque o
   // clique no overlay pede o pointer lock, e travar o mouse ao apagar o mundo
