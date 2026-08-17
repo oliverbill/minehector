@@ -17,12 +17,18 @@ export const SPAWN_CLEAR = 7;       // raio livre em torno do spawn do jogador
 // A aldeia inteira cabe neste raio em volta do spawn. Sem o teto, cada bot
 // construía onde estivesse quando deu vontade — e como eles vagueiam, as casas
 // nasciam a 40 ou 50 blocos, longe demais para quem só quer ver a obra acontecer.
-export const VILLAGE_RADIUS = 16;
+//
+// 22 e não 16: descontando os 7 livres do spawn, um raio de 16 deixa um anel
+// estreito demais para seis construções. As três primeiras o ocupavam e as
+// últimas eram empurradas para 35 ou 43 blocos — o oposto do que se queria.
+// Medido em oito seeds: com 22, as oito aldeias ficam completas, a maioria das
+// construções entre 10 e 21 blocos.
+export const VILLAGE_RADIUS = 22;
 // Teto de folga para um tipo teimoso. O sobrado é a maior planta e exige um
 // retângulo grande e plano; dentro de 16 blocos ele quase nunca achava lugar e
 // simplesmente não era construído. Cada recusa afrouxa o raio DELE um pouco,
 // até este limite — melhor um sobrado a 24 blocos do que sobrado nenhum.
-export const VILLAGE_RADIUS_MAX = 34;
+export const VILLAGE_RADIUS_MAX = 28;
 // Recusas que um tipo acumula antes de ganhar 1 bloco de folga. Não é enfeite:
 // com afrouxamento a cada recusa, o raio estourava em um minuto de jogo (três
 // bots pedindo obra a cada poucos segundos, e uma recusa conta para todos os
