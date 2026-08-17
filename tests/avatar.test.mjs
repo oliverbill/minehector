@@ -46,17 +46,22 @@ test('membros giram pelo ombro/quadril, não pelo meio', () => {
   }
 });
 
+// Peças do CORPO: as do martelo têm material único (uma textura serve às seis
+// faces de um cabo) e não entram nesta conta.
+const corpo = (g) => {
+  const out = [];
+  g.traverse((o) => { if (o.isMesh && Array.isArray(o.material)) out.push(o); });
+  return out;
+};
+
 test('cada face tem textura própria (nada de boneco monocromático)', () => {
   const a = createAvatar('Ana', 0xcc3333);
-  let caixas = 0;
-  a.group.traverse((o) => {
-    if (!o.isMesh) return;
-    caixas++;
-    assert(Array.isArray(o.material), 'a caixa não tem material por face');
+  const caixas = corpo(a.group);
+  for (const o of caixas) {
     assertEqual(o.material.length, 6, 'materiais por caixa');
     for (const m of o.material) assert(m.map, 'face sem textura');
-  });
-  assert(caixas >= 6, `só ${caixas} caixas no boneco`);
+  }
+  assert(caixas.length >= 6, `só ${caixas.length} caixas no boneco`);
 });
 
 test('o rosto é desenhado na face da frente (+Z), com olhos', () => {
@@ -77,9 +82,9 @@ test('o mesmo nome dá sempre o mesmo boneco', () => {
   const cores = (nome) => {
     const a = createAvatar(nome, 0xcc3333);
     const out = [];
-    a.group.traverse((o) => {
-      if (o.isMesh) for (const m of o.material) out.push(...m.map.image.ops.map((op) => op.color));
-    });
+    for (const o of corpo(a.group)) {
+      for (const m of o.material) out.push(...m.map.image.ops.map((op) => op.color));
+    }
     return out.join('|');
   };
   assertEqual(cores('Ana') === cores('Ana'), true, 'mesmo nome, bonecos diferentes');
@@ -117,4 +122,65 @@ test('bots não marcham em sincronia', () => {
   const pernaDe = (av) => partes(av.group).find((p) => p.position.x === 2 * U && p.position.y === 12 * U);
   for (let i = 0; i < 30; i++) { a.animate(1 / 60, 3.5, true); b.animate(1 / 60, 3.5, true); }
   assert(Math.abs(pernaDe(a).rotation.x - pernaDe(b).rotation.x) > 1e-3, 'os dois no mesmo passo');
+});
+
+// --- martelo e martelada ---------------------------------------------------
+
+const marteloDe = (a) => {
+  let achado = null;
+  a.group.traverse((o) => {
+    // O martelo é um Group com duas caixas de material único (cabo e cabeça).
+    if (o.type === 'Group' && o.children.length === 2
+      && o.children.every((c) => c.isMesh && !Array.isArray(c.material))) achado = o;
+  });
+  return achado;
+};
+
+test('o martelo só aparece na mão de quem está construindo', () => {
+  const a = createAvatar('Ana', 0xcc3333);
+  const m = marteloDe(a);
+  assert(m, 'não achei o martelo no boneco');
+  assertEqual(m.visible, false, 'martelo à mostra sem obra');
+
+  a.animate(1 / 60, 0, true, undefined, true);
+  assertEqual(m.visible, true, 'construindo e sem martelo na mão');
+  assertEqual(a.building, true, 'o boneco não se diz construindo');
+
+  a.animate(1 / 60, 0, true, undefined, false);
+  assertEqual(m.visible, false, 'largou a obra e ficou com o martelo');
+});
+
+test('o martelo pendura no braço direito, não flutua ao lado', () => {
+  const a = createAvatar('Beto', 0x3366cc);
+  const m = marteloDe(a);
+  // O pai do martelo tem de ser um pivô de braço: x positivo (direito) e a
+  // altura do ombro. Solto no group, ele não acompanharia o gesto.
+  assert(m.parent && m.parent !== a.group, 'o martelo está solto no boneco');
+  assert(m.parent.position.x > 0, 'o martelo não está na mão direita');
+});
+
+test('construindo, o corpo sobe e desce junto com a martelada', () => {
+  const a = createAvatar('Caio', 0xe6cc33);
+  const partesCorpo = a.group.children.filter((c) => c.type === 'Group' || c.isMesh);
+  const tronco = partesCorpo.find((p) => p.isMesh && p.geometry
+    && p.geometry.parameters.width > p.geometry.parameters.depth);
+  assert(tronco, 'não achei o tronco');
+
+  const alturas = [];
+  for (let i = 0; i < 90; i++) {
+    a.animate(1 / 60, 0, true, undefined, true);
+    alturas.push(tronco.position.y);
+  }
+  const min = Math.min(...alturas);
+  const max = Math.max(...alturas);
+  assert(max - min > 0.02, `o tronco mal se move na obra (${(max - min).toFixed(4)})`);
+
+  // E parado, sem obra, o corpo volta a ficar quieto (só a respiração).
+  const paradas = [];
+  for (let i = 0; i < 90; i++) {
+    a.animate(1 / 60, 0, true, undefined, false);
+    paradas.push(tronco.position.y);
+  }
+  const varParado = Math.max(...paradas) - Math.min(...paradas);
+  assert(varParado < (max - min) / 2, 'parado balança tanto quanto martelando');
 });

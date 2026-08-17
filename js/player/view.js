@@ -16,6 +16,7 @@ export const THIRD_FRONT = 2;
 export const MODE_NAMES = ['1ª pessoa', '3ª pessoa', '3ª pessoa (de frente)'];
 
 const DIST = 4.2;       // recuo máximo da câmera, em blocos
+const MARTELO_APOS_CLIQUE = 0.6;   // s que o martelo fica à mostra depois do clique
 const WALL_MARGIN = 0.4; // folga até a parede: encostado, o near plane a corta
 
 export class View {
@@ -46,6 +47,13 @@ export class View {
     if (input && input.onKeyPress) {
       input.onKeyPress((code) => { if (code === 'KeyV') this.cycle(); });
     }
+    // O jogador não tem "obra" como os bots: a obra dele é o clique. Cada clique
+    // acende o martelo por um instante, e cliques seguidos emendam numa
+    // martelada contínua — que é como se constrói de verdade.
+    if (input && input.onMouseButton) {
+      input.onMouseButton(() => { this._buildFor = MARTELO_APOS_CLIQUE; });
+    }
+    this._buildFor = 0;
   }
 
   cycle() {
@@ -79,6 +87,8 @@ export class View {
     const p = this.player;
     const g = this.avatar.group;
 
+    this._buildFor = Math.max(0, this._buildFor - dt);
+
     g.visible = this.mode !== FIRST;
     if (g.visible) {
       g.position.set(p.pos.x, p.pos.y, p.pos.z);
@@ -86,7 +96,7 @@ export class View {
       // mesma conta que o bot faz com a sua velocidade.
       g.rotation.y = p.yaw + Math.PI;
       const speed = Math.hypot(p.vel.x, p.vel.z);
-      this.avatar.animate(dt, speed, p.onGround, p.pitch);
+      this.avatar.animate(dt, speed, p.onGround, p.pitch, this._buildFor > 0);
     }
 
     const eye = p.eyePos;

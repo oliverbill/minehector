@@ -23,7 +23,11 @@
     // Vista ortográfica: desenha a face escolhida de cada caixa na posição dela.
     function draw(avatar, cx, baseY, faceIndex, label) {
       const parts = [];
-      avatar.group.traverse((o) => { if (o.isMesh) parts.push(o); });
+      // Só as peças do corpo: o martelo tem material único (uma textura para as
+      // seis faces) e não se desenha nesta vista de faces.
+      avatar.group.traverse((o) => {
+        if (o.isMesh && Array.isArray(o.material) && o.visible) parts.push(o);
+      });
       // Frente por último para o tronco não cobrir os braços na vista lateral.
       parts.sort((a, b) => a.position.z - b.position.z);
       for (const mesh of parts) {

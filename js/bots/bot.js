@@ -259,6 +259,17 @@ export class Bot {
     this.yaw += d * Math.min(1, dt * 8);
     this.mesh.rotation.y = this.yaw;
 
-    this.avatar.animate(dt, speed, this.onGround);
+    this.avatar.animate(dt, speed, this.onGround, undefined, this.working);
+  }
+
+  /**
+   * Está de fato assentando bloco? Ter obra não basta: enquanto caminha até o
+   * canteiro ele estaria martelando o ar no meio do campo. É a mesma condição
+   * que `build()` usa para trabalhar — chegar ao pé da obra.
+   */
+  get working() {
+    if (!this.job) return false;
+    const p = this.job.standPoint;
+    return Math.hypot(p.x - this.pos.x, p.z - this.pos.z) <= BUILD_RANGE;
   }
 }
