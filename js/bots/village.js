@@ -23,6 +23,12 @@ export const VILLAGE_RADIUS = 16;
 // simplesmente não era construído. Cada recusa afrouxa o raio DELE um pouco,
 // até este limite — melhor um sobrado a 24 blocos do que sobrado nenhum.
 export const VILLAGE_RADIUS_MAX = 34;
+// Recusas que um tipo acumula antes de ganhar 1 bloco de folga. Não é enfeite:
+// com afrouxamento a cada recusa, o raio estourava em um minuto de jogo (três
+// bots pedindo obra a cada poucos segundos, e uma recusa conta para todos os
+// tipos pendentes) e a aldeia inteira nascia a 26-33 blocos. Medido em cinco
+// seeds: com 4, saem as seis com no máximo uma além de 25 blocos.
+const RECUSAS_POR_BLOCO = 4;
 export const BLOCKS_PER_SECOND = 9; // ritmo de assentamento
 const FOUNDATION_DEPTH = 10;        // até onde o alicerce desce atrás de apoio
 const ADIAMENTOS_MAX = 40;          // voltas que um bloco espera quem está no caminho
@@ -335,7 +341,7 @@ export class Village {
   /** Raio permitido para este tipo, que cresce a cada recusa acumulada. */
   _radiusFor(kind) {
     const recusas = this._fails.get(kind) || 0;
-    return Math.min(VILLAGE_RADIUS + recusas, VILLAGE_RADIUS_MAX);
+    return Math.min(VILLAGE_RADIUS + Math.floor(recusas / RECUSAS_POR_BLOCO), VILLAGE_RADIUS_MAX);
   }
 
   _trySite(kind, cx, cz) {
