@@ -196,12 +196,28 @@ enquanto apertados: um bloco por toque transformaria cavar em dezenas de toques)
 trocar de câmera e voltar ao menu — este último é o ESC do celular, sem ele não há
 como reabrir o painel nem chegar ao botão de recomeçar o mundo.
 
-**O gesto começa no elemento e termina na janela.** `pointerdown` é ouvido na zona
-(ou no botão), mas `pointermove`/`pointerup`/`pointercancel` vão no `window`: o
+**O gesto começa no elemento e termina na janela.** `touchstart` é ouvido na zona
+(`pointerdown`, no caso dos botões), mas o meio e o fim do gesto vão no `window`: o
 polegar cruza a divisa das metades e escorrega para fora dos botões o tempo todo, e
-um `pointerup` perdido significa jogador andando sozinho ou pulo preso para sempre.
+um fim de gesto perdido significa jogador andando sozinho ou pulo preso para sempre.
 `setPointerCapture` resolveria o mesmo, mas lança quando o ponteiro já sumiu — e a
 exceção mataria o handler antes da ação.
+
+**Manche e olhar são eventos de TOQUE, não pointer events** — e isto é o conserto do
+travamento do iPad. Com dois dedos na tela, o `pointerId` do Safari não é de fiar: ao
+levantar um deles, os que ficam podem ser renumerados, e o `pointerup` do manche
+chega com um id que não é o que desceu. O gesto nunca era solto — jogador andando
+para a frente para sempre — e a zona ficava reservada (`_stickId`) para um dedo que
+não existia mais, então nem dedo novo pegava: controle travado. O `identifier` de um
+`Touch` é o mesmo do `touchstart` ao `touchend`, e é por ele que cada papel é
+roteado. Os botões continuam em pointer events (um botão é um toque só, e assim
+respondem também ao trackpad de um iPad com teclado), mas cada um solta apenas o seu
+`pointerId` — antes, levantar o polegar do manche largava o pulo junto.
+
+**Duas redes por baixo:** `touchend`/`touchcancel` sem nenhum dedo restante na tela
+solta tudo (manche, olhar, botões e as repetições), e `blur` faz o mesmo — trocar de
+aba no meio de um gesto não devolve `touchend` nenhum, e voltar ao jogo já andando
+era o mesmo defeito por outra porta.
 
 `stickVector` é pura de propósito: é a única parte testável sem tela nem dedo, e é
 onde mora a regra de que meio empurrão anda meia velocidade. O `Player` soma o

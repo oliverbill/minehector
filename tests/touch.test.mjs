@@ -6,7 +6,7 @@
 // o jogo ande SEM pointer lock, porque no iPhone ele nunca vai existir.
 
 import { test, assert, assertEqual } from './tiny-test.mjs';
-import { stickVector, isTouchDevice, STICK_RADIUS } from '../js/player/touch.js';
+import { stickVector, isTouchDevice, STICK_RADIUS, TouchControls } from '../js/player/touch.js';
 import { Input } from '../js/player/input.js';
 import { Player } from '../js/player/player.js';
 import { Interaction } from '../js/player/interaction.js';
@@ -142,4 +142,164 @@ test('tocar no slot escolhe o bloco como as teclas 1–9', () => {
 
 test('sem navegador, nada se declara tela de toque', () => {
   assertEqual(isTouchDevice(), false, 'em Node não existe dedo');
+});
+
+// --- o gesto inteiro, com uma tela de mentira ---------------------------------
+//
+// O que trava o iPad não está na conta do manche: está em quem solta o gesto. Um
+// DOM de brinquedo — três elementos e uma lista de ouvintes — basta para pôr
+// dois dedos na tela, levantar um de cada vez e conferir que ninguém fica preso.
+
+function novoElemento(action) {
+  const ouvintes = new Map();
+  const classes = new Set();
+  return {
+    dataset: action ? { action } : {},
+    style: {},
+    classes,
+    classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c) },
+    addEventListener(tipo, fn) {
+      if (!ouvintes.has(tipo)) ouvintes.set(tipo, []);
+      ouvintes.get(tipo).push(fn);
+    },
+    emitir(tipo, ev) { for (const fn of ouvintes.get(tipo) || []) fn(ev); },
+  };
+}
+
+const dedo = (id, x, y) => ({ identifier: id, clientX: x, clientY: y });
+
+/** Monta TouchControls sobre um DOM falso e devolve o controle remoto da tela. */
+function montarToque() {
+  const { input } = montar();
+  input.touchActive = true;
+
+  const zonas = {
+    touch: novoElemento(),
+    'stick-zone': novoElemento(),
+    'look-zone': novoElemento(),
+    'stick-base': novoElemento(),
+    'stick-knob': novoElemento(),
+  };
+  const botoes = ['pular', 'quebrar', 'colocar', 'visao', 'menu'].map(novoElemento);
+  zonas.touch.querySelectorAll = () => botoes;
+
+  const janela = novoElemento();
+  const docReal = globalThis.document;
+  const winReal = globalThis.window;
+  globalThis.document = { getElementById: (id) => zonas[id] || null };
+  globalThis.window = janela;
+  let controls;
+  try {
+    controls = new TouchControls(input);
+  } finally {
+    globalThis.document = docReal;
+    globalThis.window = winReal;
+  }
+
+  const ev = (tipo, changed, restantes) => ({
+    type: tipo,
+    changedTouches: changed,
+    touches: restantes,
+    preventDefault: () => {},
+  });
+
+  return {
+    input,
+    controls,
+    botao: (acao) => botoes.find((b) => b.dataset.action === acao),
+    // `restantes` é o que sobra na tela — é dele que sai a rede de segurança.
+    pousa: (zona, t, restantes) => zonas[zona].emitir('touchstart', ev('touchstart', [t], restantes || [t])),
+    arrasta: (t, restantes) => janela.emitir('touchmove', ev('touchmove', [t], restantes || [t])),
+    levanta: (t, restantes = []) => janela.emitir('touchend', ev('touchend', [t], restantes)),
+    aperta: (acao, pointerId) => {
+      const b = botoes.find((x) => x.dataset.action === acao);
+      b.emitir('pointerdown', { pointerId, preventDefault: () => {} });
+    },
+    largaPonteiro: (pointerId) => janela.emitir('pointerup', { pointerId }),
+  };
+}
+
+test('empurrar o manche anda, e levantar o dedo pára', () => {
+  const t = montarToque();
+  t.pousa('stick-zone', dedo(1, 200, 500));
+  t.arrasta(dedo(1, 200, 500 - STICK_RADIUS));
+  assert(t.input.stick && t.input.stick.forward > 0.9, 'o manche não fez andar para a frente');
+  t.levanta(dedo(1, 200, 500 - STICK_RADIUS));
+  assertEqual(t.input.stick, null, 'o dedo saiu da tela e o jogador continuou andando');
+});
+
+test('levantar o dedo do olhar não solta o manche do outro dedo', () => {
+  const t = montarToque();
+  const olhar = dedo(1, 700, 400);
+  const manche = dedo(2, 200, 500);
+  t.pousa('look-zone', olhar, [olhar]);
+  t.pousa('stick-zone', manche, [olhar, manche]);
+  t.arrasta(dedo(2, 200, 500 - STICK_RADIUS), [olhar, manche]);
+  assert(t.input.stick.forward > 0.9, 'o manche não pegou');
+
+  t.levanta(olhar, [manche]);                 // o dedo do olhar sai; o do manche fica
+  assert(t.input.stick && t.input.stick.forward > 0.9, 'levantar um dedo largou o manche do outro');
+
+  t.levanta(manche, []);
+  assertEqual(t.input.stick, null, 'o manche não foi solto quando o seu dedo saiu');
+});
+
+// Este é o defeito do iPad: com dois dedos, o fim do gesto chegava com a
+// identidade trocada, o manche nunca era solto e o zona ficava reservada para um
+// dedo que não existia mais — jogador andando para sempre, controle travado.
+test('fim de gesto com identidade trocada não deixa o jogador andando', () => {
+  const t = montarToque();
+  t.pousa('stick-zone', dedo(2, 200, 500));
+  t.arrasta(dedo(2, 200, 500 - STICK_RADIUS));
+  assert(t.input.stick.forward > 0.9, 'o manche não pegou');
+
+  t.levanta(dedo(99, 200, 400), []);          // identificador que nunca desceu
+  assertEqual(t.input.stick, null, 'ficou andando sozinho: é o travamento do iPad');
+  assert(!t.input.isDown('ShiftLeft'), 'ficou correndo sozinho');
+
+  t.pousa('stick-zone', dedo(3, 300, 500));   // e a zona aceita dedo novo
+  t.arrasta(dedo(3, 300, 500 - STICK_RADIUS));
+  assert(t.input.stick && t.input.stick.forward > 0.9, 'o manche ficou travado para sempre');
+});
+
+test('toque curto na metade direita quebra; arrasto longo só olha', () => {
+  const t = montarToque();
+  let cliques = 0;
+  t.input.onMouseButton((b) => { if (b === 0) cliques++; });
+
+  t.pousa('look-zone', dedo(1, 700, 400));
+  t.levanta(dedo(1, 700, 400));
+  assertEqual(cliques, 1, 'o toque curto não quebrou o bloco mirado');
+
+  t.pousa('look-zone', dedo(2, 700, 400));
+  t.arrasta(dedo(2, 500, 400));
+  t.levanta(dedo(2, 500, 400));
+  assertEqual(cliques, 1, 'arrastar para olhar não devia quebrar bloco');
+  const { dx } = t.input.consumeMouseDelta();
+  assert(dx < 0, 'o arrasto não virou olhada');
+});
+
+test('largar o dedo do manche não solta o botão de pular', () => {
+  const t = montarToque();
+  t.pousa('stick-zone', dedo(1, 200, 500));
+  t.aperta('pular', 7);
+  assert(t.input.isDown('Space'), 'o botão de pular não segurou a tecla');
+
+  t.largaPonteiro(1);                         // o ponteiro do manche, não o do botão
+  assert(t.input.isDown('Space'), 'levantar o dedo do manche largou o pulo junto');
+
+  t.largaPonteiro(7);
+  assert(!t.input.isDown('Space'), 'o pulo ficou preso depois de soltar o botão');
+});
+
+test('sem dedo nenhum na tela, nada continua apertado', () => {
+  const t = montarToque();
+  t.aperta('pular', 3);
+  t.pousa('stick-zone', dedo(1, 200, 500));
+  t.arrasta(dedo(1, 200, 500 - STICK_RADIUS));
+  assert(t.input.isDown('Space') && t.input.stick, 'o cenário não montou');
+
+  t.levanta(dedo(1, 200, 400), []);           // último dedo fora: a rede fecha tudo
+  assertEqual(t.input.stick, null, 'manche preso com a tela vazia');
+  assert(!t.input.isDown('Space'), 'pulo preso com a tela vazia');
 });

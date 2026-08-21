@@ -12,6 +12,20 @@
 // mirado) e botões para pular, colocar, trocar de câmera e voltar ao menu. Tudo
 // entra pelo Input, então Player, Interaction e View seguem sem saber de nada.
 //
+// O manche e o olhar são ouvidos por EVENTOS DE TOQUE, e não por pointer events.
+// Não é preferência de gosto: com dois dedos na tela — que é como se joga no
+// iPad — o `pointerId` do Safari não é de fiar. Ao levantar um dos dedos, os que
+// ficam podem ser renumerados, e então o `pointerup` do manche chega com um id
+// que não é o que desceu. O gesto nunca era solto: o jogador andava para a
+// frente para sempre e o manche não aceitava dedo novo (`_stickId` preso num id
+// que nunca mais voltaria) — a tela inteira travada, que é o defeito do iPad.
+// O `identifier` de um Touch, esse, é o mesmo do touchstart ao touchend.
+//
+// Os botões continuam em pointer events: um botão é um toque só, e assim eles
+// também respondem ao trackpad de um iPad com teclado. Mas ninguém fica preso:
+// `touchend` sem nenhum dedo restante na tela solta TUDO, e perder a janela
+// (trocar de aba, atender uma chamada) faz o mesmo.
+//
 // A geometria do manche (`stickVector`) é função pura de propósito: é a única
 // parte que dá para testar sem tela nem dedo, e é onde mora a regra de que meio
 // empurrão anda meia velocidade.
@@ -56,6 +70,15 @@ export function isTouchDevice() {
     || (typeof window !== 'undefined' && 'ontouchstart' in window);
 }
 
+/** O toque de `identifier` dado, ou null. TouchList é array-like, não array. */
+function acharDedo(lista, id) {
+  if (!lista) return null;
+  for (let i = 0; i < lista.length; i++) {
+    if (lista[i].identifier === id) return lista[i];
+  }
+  return null;
+}
+
 export class TouchControls {
   /**
    * @param {import('./input.js').Input} input
@@ -64,9 +87,10 @@ export class TouchControls {
   constructor(input, opts = {}) {
     this.input = input;
     this.onMenu = opts.onMenu;
-    this._lookId = null;
-    this._stickId = null;
+    this._stick = null;          // { id, ox, oy } — id é o identifier do Touch
+    this._look = null;           // { id, x, y, andou, t0 }
     this._repeats = new Map();   // pointerId -> id do setInterval
+    this._pressed = new Map();   // pointerId -> botão apertado
 
     this.root = document.getElementById('touch');
     if (!this.root) return;
@@ -75,49 +99,84 @@ export class TouchControls {
 
     this._bindStick(document.getElementById('stick-zone'));
     this._bindLook(document.getElementById('look-zone'));
+    this._bindDedos();
     for (const btn of this.root.querySelectorAll('[data-action]')) this._bindButton(btn);
   }
 
   // O manche nasce onde o polegar pousou, e não num canto fixo: em tela de
   // celular a mão não mira, ela larga o dedo perto de onde já está.
   //
-  // O toque COMEÇA na zona, mas o resto do gesto é ouvido na janela: o polegar
-  // atravessa a divisa das metades a cada curva, e handler preso ao elemento
-  // perderia o `pointerup` do outro lado — o jogador ficaria andando sozinho, de
-  // manche solto, sem nada para soltar.
+  // O toque só COMEÇA na zona: o resto do gesto é ouvido na janela (_bindDedos),
+  // porque o polegar atravessa a divisa das metades a cada curva e um handler
+  // preso ao elemento perderia o fim do gesto do outro lado.
   _bindStick(zone) {
     if (!zone) return;
-    let ox = 0, oy = 0;
-
-    zone.addEventListener('pointerdown', (e) => {
-      if (this._stickId !== null) return;
-      this._stickId = e.pointerId;
-      ox = e.clientX;
-      oy = e.clientY;
-      e.preventDefault();
+    zone.addEventListener('touchstart', (e) => {
+      const t = e.changedTouches[0];
+      if (!t || this._stick) return;   // um manche de cada vez
+      e.preventDefault();              // sem clique fantasma nem zoom por duplo toque
+      this._stick = { id: t.identifier, ox: t.clientX, oy: t.clientY };
       if (this.base) {
-        this.base.style.left = `${ox}px`;
-        this.base.style.top = `${oy}px`;
+        this.base.style.left = `${t.clientX}px`;
+        this.base.style.top = `${t.clientY}px`;
         this.base.classList.add('on');
       }
       this._move(0, 0);
-    });
+    }, { passive: false });
+  }
 
-    window.addEventListener('pointermove', (e) => {
-      if (e.pointerId !== this._stickId) return;
-      this._move(e.clientX - ox, e.clientY - oy);
-    });
+  // Metade direita: arrastar olha. O toque curto e parado vira clique esquerdo —
+  // sem isso, quebrar bloco dependeria de acertar o botão, e mirar e quebrar são
+  // o mesmo gesto na cabeça de quem joga.
+  _bindLook(zone) {
+    if (!zone) return;
+    zone.addEventListener('touchstart', (e) => {
+      const t = e.changedTouches[0];
+      if (!t || this._look) return;
+      e.preventDefault();
+      this._look = {
+        id: t.identifier, x: t.clientX, y: t.clientY, andou: 0, t0: performance.now(),
+      };
+    }, { passive: false });
+  }
 
-    const solta = (e) => {
-      if (e.pointerId !== this._stickId) return;
-      this._stickId = null;
-      if (this.base) this.base.classList.remove('on');
-      if (this.knob) this.knob.style.transform = 'translate(-50%, -50%)';
-      this.input.setStick(0, 0);
-      this.input.setVirtualKey('ShiftLeft', false);
+  // O meio do gesto e o fim dele, para os dois papéis, num lugar só: cada dedo é
+  // reconhecido pelo `identifier` que trouxe do touchstart, e nenhum papel
+  // sobrevive à saída do seu dedo da tela.
+  _bindDedos() {
+    window.addEventListener('touchmove', (e) => {
+      if (this._stick) {
+        const t = acharDedo(e.changedTouches, this._stick.id);
+        if (t) this._move(t.clientX - this._stick.ox, t.clientY - this._stick.oy);
+      }
+      if (this._look) {
+        const t = acharDedo(e.changedTouches, this._look.id);
+        if (t) {
+          const dx = t.clientX - this._look.x;
+          const dy = t.clientY - this._look.y;
+          this._look.x = t.clientX;
+          this._look.y = t.clientY;
+          this._look.andou += Math.hypot(dx, dy);
+          this.input.addLook(dx * LOOK_SENS, dy * LOOK_SENS);
+        }
+      }
+    }, { passive: true });
+
+    const fim = (e) => {
+      if (this._stick && acharDedo(e.changedTouches, this._stick.id)) this._soltarManche();
+      if (this._look && acharDedo(e.changedTouches, this._look.id)) {
+        this._soltarOlhar(e.type === 'touchend');
+      }
+      // A rede por baixo de tudo: sem dedo nenhum na tela, nada pode continuar
+      // apertado. Qualquer evento perdido — e o iOS perde — morre aqui.
+      if (!e.touches || e.touches.length === 0) this._soltarTudo();
     };
-    window.addEventListener('pointerup', solta);
-    window.addEventListener('pointercancel', solta);
+    window.addEventListener('touchend', fim);
+    window.addEventListener('touchcancel', fim);
+
+    // Sair da janela no meio do gesto (aba, chamada, notificação) não devolve
+    // touchend nenhum: sem isto, voltar ao jogo é voltar já andando.
+    window.addEventListener('blur', () => this._soltarTudo());
   }
 
   _move(dx, dy) {
@@ -129,42 +188,34 @@ export class TouchControls {
     }
   }
 
-  // Metade direita: arrastar olha. O toque curto e parado vira clique esquerdo —
-  // sem isso, quebrar bloco dependeria de acertar o botão, e mirar e quebrar são
-  // o mesmo gesto na cabeça de quem joga.
-  _bindLook(zone) {
-    if (!zone) return;
-    let lx = 0, ly = 0, andou = 0, t0 = 0;
+  _soltarManche() {
+    this._stick = null;
+    if (this.base) this.base.classList.remove('on');
+    if (this.knob) this.knob.style.transform = 'translate(-50%, -50%)';
+    this.input.setStick(0, 0);
+    this.input.setVirtualKey('ShiftLeft', false);
+  }
 
-    zone.addEventListener('pointerdown', (e) => {
-      if (this._lookId !== null) return;
-      this._lookId = e.pointerId;
-      lx = e.clientX;
-      ly = e.clientY;
-      andou = 0;
-      t0 = performance.now();
-      e.preventDefault();
-    });
+  /** @param {boolean} podeSerToque — cancelado pelo sistema não conta como toque. */
+  _soltarOlhar(podeSerToque) {
+    const o = this._look;
+    this._look = null;
+    if (!o || !podeSerToque) return;
+    if (o.andou < TAP_PX && performance.now() - o.t0 < TAP_MS) this.input.emitMouseButton(0);
+  }
 
-    window.addEventListener('pointermove', (e) => {
-      if (e.pointerId !== this._lookId) return;
-      const dx = e.clientX - lx;
-      const dy = e.clientY - ly;
-      lx = e.clientX;
-      ly = e.clientY;
-      andou += Math.hypot(dx, dy);
-      this.input.addLook(dx * LOOK_SENS, dy * LOOK_SENS);
-    });
+  _soltarBotoes() {
+    for (const timer of this._repeats.values()) clearInterval(timer);
+    this._repeats.clear();
+    for (const btn of this._pressed.values()) btn.classList.remove('press');
+    this._pressed.clear();
+    this.input.setVirtualKey('Space', false);
+  }
 
-    const solta = (e) => {
-      if (e.pointerId !== this._lookId) return;
-      this._lookId = null;
-      if (e.type === 'pointerup' && andou < TAP_PX && performance.now() - t0 < TAP_MS) {
-        this.input.emitMouseButton(0);
-      }
-    };
-    window.addEventListener('pointerup', solta);
-    window.addEventListener('pointercancel', solta);
+  _soltarTudo() {
+    this._soltarManche();
+    this._soltarOlhar(false);
+    this._soltarBotoes();
   }
 
   // Quebrar e colocar repetem enquanto o botão está apertado: um bloco por toque
@@ -175,6 +226,7 @@ export class TouchControls {
     btn.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       btn.classList.add('press');
+      this._pressed.set(e.pointerId, btn);
       switch (acao) {
         case 'pular':
           this.input.setVirtualKey('Space', true);
@@ -201,8 +253,11 @@ export class TouchControls {
 
     // Soltar também é ouvido na janela, e não no botão: o dedo escorrega para
     // fora do círculo o tempo todo, e um `pointerup` perdido significa pulo
-    // preso para sempre ou martelada que não pára.
+    // preso para sempre ou martelada que não pára. Só solta o botão DESTE
+    // ponteiro — antes, levantar o polegar do manche largava o pulo junto.
     const solta = (e) => {
+      if (this._pressed.get(e.pointerId) !== btn) return;
+      this._pressed.delete(e.pointerId);
       btn.classList.remove('press');
       if (acao === 'pular') this.input.setVirtualKey('Space', false);
       const timer = this._repeats.get(e.pointerId);
@@ -217,10 +272,6 @@ export class TouchControls {
 
   /** Pausar no meio de um gesto não pode deixar dedo (nem repetição) pendurado. */
   reset() {
-    for (const timer of this._repeats.values()) clearInterval(timer);
-    this._repeats.clear();
-    this._stickId = null;
-    this._lookId = null;
-    if (this.base) this.base.classList.remove('on');
+    this._soltarTudo();
   }
 }
