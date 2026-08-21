@@ -9,8 +9,9 @@
 //
 // Aqui o dedo faz os dois papéis: manche à esquerda (anda, e empurrado até o fim
 // corre), arrasto à direita (olha), toque curto à direita (quebra o bloco
-// mirado) e botões para pular, colocar, trocar de câmera e voltar ao menu. Tudo
-// entra pelo Input, então Player, Interaction e View seguem sem saber de nada.
+// mirado — ou acerta a ovelha) e botões para pular, colocar, comer, trocar de
+// câmera e voltar ao menu. Tudo entra pelo Input, então Player, Interaction e
+// View seguem sem saber de nada.
 //
 // O manche e o olhar são ouvidos por EVENTOS DE TOQUE, e não por pointer events.
 // Não é preferência de gosto: com dois dedos na tela — que é como se joga no
@@ -242,6 +243,9 @@ export class TouchControls {
         }
         case 'visao':
           this.input.emitKeyPress('KeyV');
+          break;
+        case 'comer':
+          this.input.emitKeyPress('KeyE');
           break;
         case 'menu':
           if (this.onMenu) this.onMenu();

@@ -30,6 +30,8 @@ python3 -m http.server 8080
 | Mouse esq. | quebrar bloco |
 | Mouse dir. | colocar bloco |
 | 1–9 | escolher bloco do hotbar (7 água, 8 lava, 9 fogo) |
+| Mouse esq. na ovelha | caçar (três picaretadas) |
+| E | comer a carne e repor o fôlego |
 | V | alternar 1ª pessoa → 3ª pessoa → 3ª de frente |
 | Espaço (na água) | nadar para cima |
 | ESC | soltar o mouse |
@@ -45,9 +47,10 @@ de toque, o menu some ao primeiro toque e aparecem os controles:
 | --- | --- |
 | Manche na metade esquerda | andar — nasce onde o polegar pousa; até o fim, corre |
 | Arrastar na metade direita | olhar |
-| Tocar na metade direita | quebrar o bloco mirado |
+| Tocar na metade direita | quebrar o bloco mirado — ou acertar a ovelha |
 | ⤒ | pular (e nadar para cima, dentro da água) |
 | ✖ / ▣ | quebrar / colocar — segurando, repete |
+| 🍖 | comer a carne e repor o fôlego |
 | ◉ | 1ª pessoa → 3ª → 3ª de frente |
 | ☰ | voltar ao menu (é o ESC do celular) |
 | Toque no hotbar | escolher o bloco |
@@ -71,8 +74,20 @@ Cave um buraco, encha com o bloco 7 e pule dentro — lá dentro a queda é lent
 o Espaço sobe. A mira acerta a água, então dá para esvaziar a piscina quebrando
 bloco por bloco.
 
+**Ovelhas, e caçar para comer.** Há um rebanho pastando na grama à sua volta. Ele
+não foge de quem passa perto: a ovelha levanta a cabeça, olha e volta a pastar. Mas
+quem apanha dispara — e foge mais rápido do que você anda, então **caçar é correr
+atrás**. São três picaretadas, e cada ovelha rende dois pedaços de carne.
+
+Correr gasta fôlego (a barrinha 🍖 da HUD), e sem fôlego você não corre e ainda anda
+mais devagar — é aí que a carne serve: **E** no teclado, 🍖 no celular, e o fôlego
+volta. A barra pisca em vermelho quando está no fim. Ninguém morre de fome; o que se
+perde é a corrida, e sem corrida não se caça mais nada.
+
 Em 3ª pessoa você se vê: o boneco do jogador é o Heitor — moletom preto de
-zíper, bermuda clara, tênis escuros e as luvas de boxe vermelhas.
+zíper, bermuda clara, tênis escuros e as luvas de boxe vermelhas. E **a picareta
+está sempre na mão**: em 1ª pessoa no canto da tela, batendo a cada clique; em 3ª,
+na mão direita do boneco.
 
 ## O que acontece sozinho no mundo
 
@@ -99,8 +114,8 @@ do que você construiu ou cavou.
 
 Mundo infinito em chunks 16×16×64 gerados por ruído simplex a partir de uma seed;
 meshing com face culling (uma malha por chunk, atlas de texturas procedural);
-física AABB própria contra a grade de voxels; bots com FSM simples que usam a mesma
-física do jogador; persistência apenas das diferenças (blocos editados) em IndexedDB.
+física AABB própria contra a grade de voxels; bots e ovelhas com FSM simples que usam
+a mesma física do jogador; persistência apenas das diferenças (blocos editados) em IndexedDB.
 
 Detalhes e contratos entre módulos: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -112,15 +127,19 @@ node tests/run.mjs
 
 Sem dependências: os testes carregam os módulos reais do jogo, com o especificador `three`
 resolvido para `lib/three.module.js` como o importmap do `index.html` faz no navegador.
-Cobrem a interação — mira, colocar, quebrar, alcance e o contrato do raycast.
+Cobrem a interação — mira, colocar, quebrar, alcance e o contrato do raycast — e o
+laço da caça: a mira disputada entre ovelha e bloco, os três golpes, o rebanho
+nascendo na grama e o fôlego que a carne repõe.
 
 ```
 js/
   constants.js   dimensões, ids de bloco, seed
   world/         ruído, geração de chunks, estado do mundo, saves (IndexedDB)
-  render/        atlas procedural, mesher (face culling), cena e malhas por chunk
+  render/        atlas procedural, mesher (face culling), cena e malhas por chunk,
+                 picareta (na câmera em 1ª pessoa, na mão do boneco em 3ª)
   player/        input (pointer lock + toque), touch (manche e botões),
                  física AABB, raycast DDA, interação
   bots/          FSM e corpos dos bots
+  mobs/          ovelhas: FSM, corpo, rebanho e a mira que as acerta
   main.js        boot e game loop
 ```

@@ -143,6 +143,65 @@ As partículas do clima vivem numa caixa que anda com o jogador e reciclam quem 
 
 **Nada nesses dois módulos altera o mundo, a física ou os bots** — só cor, posição e visibilidade. Dá para desligar sem quebrar o jogo.
 
+### pixelart.js — o pincel comum
+
+```js
+export function surface(wu, hu)   // -> { canvas, rect, grain }: uma face para pintar
+export function material(canvas)  // CanvasTexture + NearestFilter + MeshLambertMaterial
+export function shade(cor, d)     // clareia (d > 0) ou escurece uma cor [r, g, b]
+```
+Tudo que não é bloco se pinta por aqui: o boneco dos bots e do jogador, a picareta e as ovelhas. A unidade é abstrata de propósito — o avatar mede em `U`, a picareta e a ovelha medem em bloco; o que estas funções pedem é "quantas unidades de textura".
+
+### pickaxe.js — a ferramenta na mão
+
+```js
+export function createPickaxe(escala = 1)   // -> THREE.Group, empunhadura na ORIGEM
+export function createHandPickaxe()         // -> { group, animate(dt, batendo) } p/ pendurar na câmera
+```
+
+Mesma pixel art do resto (canvas por face, `NearestFilter`): cabo de madeira com veio e amarração de couro, cabeça de ferro com luz na aresta de cima e gume claro nas pontas. Com `escala = 1` a caixa envolvente mede 0,965 de altura por 0,568 de vão de cabeça.
+
+**A empunhadura é a origem do grupo**, e é isso que deixa os dois usos serem o mesmo objeto: em terceira pessoa basta pôr a origem na mão do boneco (`escala 0.62`, girada 45° em Y para a ponta de dentro passar à frente do peito em vez de entrar no tronco); em primeira, o grupo já vem posicionado no canto inferior direito do campo de visão (`escala 0.46`).
+
+As pontas da cabeça **afinam e apontam para +Z**. Sem elas a cabeça é um tijolo atravessado num cabo, e a silhueta não se lê como picareta — que é a única coisa que a ferramenta precisa fazer, já que ela vive na periferia da visão.
+
+A martelada da mão interpola entre pose de repouso (respiração lenta) e pose de golpe, com entrada e saída em rampa: alternar `batendo` no ritmo real dos cliques não pode dar solavanco. O ritmo é o mesmo 1,6 golpe/s do martelo dos bots. O ponto mais próximo do olho ao longo do ciclo é 0,440 bloco — mais de 4× o `near` de 0,1 da câmera, e há um teste que mede isso, porque mexer na pose sem refazer a conta é como a ferramenta começa a ser comida pelo canto de baixo; e a névoa linear só começa a 28,8 blocos, então não foi preciso material especial.
+
+## js/mobs/ — as ovelhas
+
+```js
+export class SheepBrain {                 // FSM pura: sem THREE, sem world, sem DOM
+  constructor(rng = Math.random)
+  update(elapsed, ctx)                    // ctx = { x, z, playerDist } -> estado
+  panic(px, pz)                           // apanhou: foge do ponto (px, pz)
+  state                                   // 'idle' | 'pastando' | 'wander' | 'flee'
+}
+export class Sheep {
+  constructor(pos, rng = Math.random)     // pos = centro da base, como toda entidade
+  think(elapsed, playerPos); steer(world, playerPos); syncMesh(dt)
+  hurt(dano = 1, deQuem)                  // -> true SÓ no golpe que mata
+  health; get dead; get tombando; mesh
+}
+export class SheepManager {
+  constructor(scene, world, count = 6, center, rng = Math.random)
+  update(dt, playerPos)                   // física + IA + repovoamento + recolhimento
+  raycast(origin, dir, maxDist)           // -> { sheep, t } | null
+  sheep
+}
+```
+
+AABB 0,9 × 1,3 × 0,9 e a mesma `moveEntity` do jogador e dos bots — bicho com física própria acaba atravessando parede em algum canto. A IA segue o desenho do `BotBrain`: FSM pura com rng injetável, pensamento a cada 0,3 s, steering por frame.
+
+**A ovelha não foge de quem só passa perto.** Ela levanta a cabeça a menos de 2,2 blocos e volta a pastar; quem dispara o pânico é apanhar. Rebanho que sai correndo à sua chegada não é caçável — e não é rebanho, é uma nuvem de pontos brancos fugindo no horizonte.
+
+**As três velocidades são um intervalo, não três números soltos:** ela pasta a 1,6, foge a 4,9, o jogador anda a 4,3 e corre a 5,6. Fugindo mais que quem anda e menos que quem corre, a caça vira perseguição e a perseguição gasta fôlego — que é o que a carne dela repõe. Fora do intervalo o laço desanda nos dois sentidos: 4,2 se pegava andando, 5,7 não se pegava nunca.
+
+**A morte tem meio segundo.** `hurt` devolve `true` uma única vez (o cadáver não rende carne duas vezes), a ovelha para, tomba de lado em `FALL_TIME` e só então o manager tira o mesh da cena. Sumir no instante do golpe faria a caça parecer um bug.
+
+**A caixa da mira é maior que a da física** (`AIM_PAD` = 0,25). A AABB é quadrada porque gira com o bicho, mas o corpo tem 1,15 de comprimento e sobra dela nas pontas: mirar a cabeça de uma ovelha que está debaixo do cursor e não acertar nada faz o jogador achar que a picareta está quebrada. O raio × AABB é feito à mão (método das lajes) e não com `THREE.Raycaster`: o Raycaster mediria o mesh **animado**, e a cabeça abaixada para pastar mudaria o que dá para acertar.
+
+**O rebanho segue o jogador sem guardar estado nenhum.** Nasce sobre GRAMA (o que descarta de uma vez copa de árvore, praia, montanha e fundo de lago) num anel de 14 a 34 blocos de quem joga, uma ovelha por frame no máximo; quem fica a mais de 80 blocos é recolhida e renasce perto. Texturas e geometrias são compartilhadas por um pool de três pelagens — sem isso, cada ovelha renascida alocaria 30 `CanvasTexture` sem `dispose`, e o passeio pelo mundo viraria um vazamento.
+
 ## js/player/ (frente C)
 
 ### input.js
@@ -251,21 +310,35 @@ export class Player {
   constructor(world, spawnPos)   // spawnPos = {x,y,z} (pés)
   update(dt, input)              // WASD relativo ao yaw, Space pula (se onGround), Shift corre
   get eyePos()                   // {x, y, z} = pos + altura dos olhos (1.62)
+  get exausto()                  // fôlego zerado: sem corrida e passada curta
+  comer()                        // -> 'comeu' | 'sem carne' | 'cheio'
+  folego; carne;                 // [0,1] e nº de pedaços no bolso
   yaw; pitch;                    // radianos; atualizados com consumeMouseDelta (pitch clampado ±89°)
   pos; vel;                      // como em physics.js; width 0.6, height 1.8
 }
 ```
 Velocidade andar 4.3, correr 5.6, pulo vel.y = 8.5. Usa `moveEntity`.
 
+**Fôlego e carne.** A caça precisa servir para alguma coisa, senão a ovelha é um enfeite que solta um número no canto da tela. Correr gasta `DRENO_CORRENDO` (0,011/s) e andar `DRENO_ANDANDO` (0,004/s); pular tira `DRENO_PULO` de uma vez. Zerado, some a corrida e a passada cai para `SEM_FOLEGO` (72%) — o castigo tem de se **sentir**, e a ausência de uma tecla ninguém percebe. Comer devolve `REFEICAO` (0,45), e uma ovelha rende duas refeições.
+
+O gasto é medido **depois** de `moveEntity`, com a velocidade que sobreviveu à colisão: empurrar parede com o W apertado não anda ninguém e não teria por que cansar. Meio manche gasta meio, pela mesma conta. Parado não gasta nada — cansar olhando a paisagem seria só um relógio correndo.
+
+Sem barra de vida e sem morrer de fome, de propósito: num jogo que se joga de dez em dez minutos, morrer é perder o mundo por desatenção.
+
 ### interaction.js
 ```js
 export class Interaction {
-  constructor(world, player, scene, input)
+  constructor(world, player, scene, input, mobs = null)
   update()                 // raycast (alcance 6) a partir de eyePos na direção do olhar;
                            // move um LineSegments wireframe de destaque p/ o bloco mirado (ou esconde)
   selectedBlock            // id do bloco do hotbar (default GRASS)
 }
+export const CARNE_POR_OVELHA = 2
 ```
+
+**Ovelha e bloco disputam a mesma mira, e ganha a mais perto.** `update` faz os dois raios — `raycastVoxel` no mundo e `mobs.raycast` no rebanho — e compara o `t`. Sem essa comparação dava para caçar através de uma parede, e o contorno branco continuaria aceso num bloco que o clique não ia tocar; por isso o destaque some quando a ovelha ganha, e a mira fica vermelha (`#crosshair.bicho`). Só o botão de **quebrar** caça: o de colocar continua assentando bloco, inclusive por cima do rebanho.
+
+A picaretada não mata de primeira (`SHEEP_HEALTH` = 3). É o que transforma a caça em perseguição — ovelha que cai ao primeiro clique é um baú com pernas — e é o que dá sentido ao fôlego, porque em pânico ela corre mais que o jogador andando. Quem morre rende `CARNE_POR_OVELHA`; o cadáver não é alvo, senão renderia carne infinita.
 
 **Nenhuma recusa silenciosa.** Clique que não faz nada é indistinguível de jogo quebrado. As duas recusas possíveis — não há bloco no alcance, e a cela ficaria dentro do jogador — dizem o motivo em `#toast`, e a mira ganha `.idle` quando não há alvo. O destaque do bloco mirado é branco com `depthTest: false`: um contorno preto translúcido desaparecia contra pedra e sombra. O alcance é 6 e não 5 porque com 5 o chão de um terreno que desce à frente cai a ~5,07 do olho e o clique morria calado.
 
@@ -286,11 +359,14 @@ export class View {
   update(dt, camera)       // posiciona boneco e câmera; chamado todo frame, depois da física
   mode                     // FIRST | THIRD_BACK | THIRD_FRONT
   avatar                   // o boneco do jogador (createAvatar com o visual HEITOR)
+  mao                      // a picareta de primeira pessoa (createHandPickaxe)
 }
 ```
 Tecla **V** alterna (não F5: no navegador F5 recarrega a página). Em 1ª pessoa a câmera fica em `eyePos` e o boneco é `visible = false`. Em 3ª, a câmera anda até 4,2 blocos no contrário do olhar (ou no sentido dele, na de frente) — e o recuo é medido com o mesmo `raycastVoxel` da mira, parando 0,4 antes do primeiro bloco sólido. Sem isso a câmera entra na parede de trás e o jogador passa a ver o mundo por dentro do terreno sem entender por quê. Na câmera de frente, `rotation` vira meia volta e o pitch inverte, para o boneco ficar de cara para quem joga.
 
 O boneco fica na `pos` do jogador (origem nos pés, como a física) com `rotation.y = yaw + π`: o rosto é a face +Z e o jogador com yaw 0 olha para -Z.
+
+**A picareta de primeira pessoa é filha da CÂMERA**, não da cena — pendurada na cena, teria de ser reposicionada por trigonometria a cada frame, e um frame de atraso entre olhar e ferramenta se lê na hora como tranco. Para os filhos da câmera serem desenhados, ela precisa estar no grafo: `scene.add(camera)` acontece no primeiro `update`, que é onde a câmera aparece (o construtor não a recebe). `mao.group.visible` segue `mode === FIRST`; em terceira pessoa quem carrega a picareta é o boneco. O golpe é o mesmo `_buildFor` que já acendia o martelo: cada clique dá 0,6 s de martelada, e cliques seguidos emendam.
 
 ## js/bots/ (frente D)
 
@@ -305,14 +381,17 @@ Bot: mesma física do jogador (`moveEntity` de `js/player/physics.js`), width 0.
 
 ### avatar.js
 ```js
-export function createAvatar(name, color, overrides) // -> { group, animate(dt, speed, onGround, pitch) }
+export function createAvatar(name, color, overrides) // -> { group, animate(dt, speed, onGround, pitch, building), building }
 export const HEITOR                                  // o visual fixo do jogador
 ```
+A pintura mora em `js/render/pixelart.js` (`surface`, `material`, `shade`), e não aqui. Ela nasceu neste arquivo e ficou enquanto o boneco era o único a se pintar assim; quando a picareta e as ovelhas passaram a usar o mesmo pincel, a casa no avatar virou um **ciclo de import** (avatar → pickaxe → avatar). Módulos ES aguentam o ciclo enquanto ninguém usa o outro lado no corpo do módulo — o que só torna o defeito mais traiçoeiro. Uma terceira casa, que não importa ninguém, desfaz o ciclo.
 Boneco humanoide segmentado: cabeça 8×8×8, tronco 8×12×4, braços e pernas 4×12×4, em unidades `U = 1.8/32` — 32 U de altura para casar com a AABB do bot. Braços e pernas penduram de um `Group` no ombro/quadril, então giram como articulação. A skin é pixel art desenhada por código (canvas 2D, `NearestFilter`), uma textura por face, com o rosto na face **+Z** — que é a frente, porque o mesh é girado por `atan2(vel.x, vel.z)`.
 
 **Duas caixas coloridas não têm frente.** De lado ou de costas o bot antigo era o mesmo borrão, e não dava para saber se vinha, ia ou estava parado. Cabeça, membros e rosto resolvem isso à distância em que a IA decide seguir (10 blocos).
 
 Pele, cabelo, calça, sapato, olhar e padrão da roupa saem de um hash do **nome** — o mesmo nome dá sempre o mesmo boneco, entre sessões e máquinas, como o resto do projeto evita `Math.random`. A camisa vem do `color` do roster. `animate` faz a passada acompanhar a velocidade real (sem patinar), morrer quando o bot para, dar respiração e olhada no idle, e levantar os braços no ar. A fase inicial é aleatória por bot para não marcharem em sincronia. Com `pitch` (o jogador), a cabeça segue a mira em vez de vagar sozinha.
+
+**A ferramenta na mão direita diz coisas diferentes conforme quem a carrega.** O martelo do bot aparece só durante a obra: ele existe para dizer "estou trabalhando AGORA". A picareta do jogador (`tool: 'picareta'` nos overrides, já embutido em `HEITOR`) não sai da mão nunca — ela diz "é com isto que eu quebro o mundo", e isso é verdade a cada clique. As duas penduram no **pivô do braço**, e não no group do boneco: solta, a ferramenta não acompanharia o gesto. Por causa disso, `avatar.building` deixou de ser "o martelo está visível" e passou a ser uma bandeira própria — quem anda de picareta na mão estaria eternamente construindo.
 
 `overrides` fixa peças do visual, para um boneco que não é sorteado. Campos além das cores: `hoodie` (zíper inteiro na frente, bolso canguru e uma caixa de capuz caída atrás do pescoço — presa ao **tronco**, senão vira chapéu que gira com o rosto), `shorts` (a calça para na coxa e o resto da perna é pele), `glove` (a mão vira luva de boxe ocupando um terço do braço, com punho enfaixado), `sock` e `nameTag`. `HEITOR` é o visual do jogador: cabelo escuro curto, moletom preto, bermuda creme, tênis escuros, luvas vermelhas e sem nome flutuando — num boneco deste tamanho o que é reconhecível é roupa e silhueta, não rosto.
 
@@ -355,11 +434,14 @@ FSM: `idle` (2–4s) → `build` (procura sítio; sem terreno, volta a vaguear) 
 
 ```
 openStorage → loadAllDiffs → new World → createScene → createAtlas → ChunkRenderer
-→ spawn em (8.5, surfaceHeight+1, 8.5) → Player, Input, Interaction, BotManager(3)
+→ spawn em (8.5, surfaceHeight+1, 8.5) → Player, Input, SheepManager(6),
+  Interaction(…, ovelhas), BotManager(3)
 → TouchControls (só em tela de toque)
 → loop rAF: dt clampado a 0.05s; player.update, interaction.update, bots.update,
-  chunkRenderer.update, view.update (boneco + câmera), render
+  ovelhas.update, chunkRenderer.update, view.update (boneco + câmera), render
 ```
+
+O rebanho nasce **antes** da Interaction porque é ela quem mira nele. Comer entra pelo mesmo caminho da tecla V: `input.onKeyPress('KeyE')` no boot, e no celular é o botão 🍖 que emite a tecla virtual — nada abaixo do `Input` sabe se veio de dedo ou de teclado.
 
 O loop anda quando `input.active` — pointer lock **ou** dedo. Começar o jogo é pedir
 o lock (mouse) ou marcar `touchActive` e esconder o overlay (toque); o `touchend` do
@@ -392,3 +474,19 @@ lock, a tecla virtual do pular tirando o jogador do chão, o arrasto virando olh
 clique virtual quebrando o bloco mirado, o hotbar tocável escolhendo bloco pelo mesmo
 caminho das teclas 1–9, e pausar soltando tudo que o dedo segurava. O `Input` real é
 usado (não um dublê): o `stubDom` do harness ganhou `addEventListener` para isso.
+
+`ovelha.test.mjs` cobre o laço da caça inteiro, e o que ele afirma de mais importante
+não é sobre a ovelha: é sobre a **mira**. Clicar numa ovelha com uma parede atrás não
+pode quebrar a parede, e clicar nela com uma parede na frente não pode acertar a
+ovelha — os dois casos estão lá, com o bloco conferido depois do clique. O resto:
+o cérebro que não entra em pânico sozinho e foge para o lado contrário de quem bateu,
+a ovelha assentando no chão pela física de verdade, os três golpes com o tombo e a
+saída de cena, o rebanho nascendo na grama e acompanhando o jogador, e o fôlego
+(andar × correr contra as constantes, parado não cansa, exausto não corre, comer
+repõe e gasta a carne). As velocidades são testadas como **intervalo** — é o que
+impede alguém de "só ajustar um número" e desmontar a caça sem quebrar teste nenhum.
+
+A picareta entra em `view.test.mjs`: pendurada na câmera uma única vez (um `add` por
+frame encheria a câmera de picaretas), visível só em primeira pessoa, descendo a
+martelada depois do clique e voltando ao repouso — e, no boneco, ferramenta na mão o
+tempo todo para o jogador, só durante a obra para o bot.

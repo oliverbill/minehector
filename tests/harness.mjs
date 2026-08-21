@@ -60,12 +60,18 @@ export function createInput() {
  * Platô plano: sólido até `groundTop`, ar acima. Devolve o mundo e o y dos pés
  * de quem estiver em pé nele.
  */
-export function flatWorld(groundTop = 40, size = 32) {
+export function flatWorld(groundTop = 40, size = 32, topo = Blocks.STONE) {
   const world = new World(1337, new Map());
   for (let x = -1; x < size; x++) {
     for (let z = -1; z < size; z++) {
       for (let y = 0; y < 64; y++) {
-        world.setBlock(x, y, z, y <= groundTop ? Blocks.STONE : Blocks.AIR);
+        // `topo` existe por causa das ovelhas: elas só nascem sobre GRAMA, e um
+        // platô de pedra é um mundo onde o rebanho nunca aparece — o teste
+        // passaria medindo um rebanho vazio.
+        const id = y < groundTop ? Blocks.STONE
+          : y === groundTop ? topo
+          : Blocks.AIR;
+        world.setBlock(x, y, z, id);
       }
     }
   }
@@ -73,11 +79,15 @@ export function flatWorld(groundTop = 40, size = 32) {
   return { world, floor: groundTop + 1 };
 }
 
-/** Jogador + interação ligados no mesmo input, como no boot do jogo. */
-export function scene(world, spawn) {
+/**
+ * Jogador + interação ligados no mesmo input, como no boot do jogo.
+ * `mobs` é o rebanho (SheepManager), quando o teste for de caça: a Interaction
+ * do jogo recebe um, e sem ele a mira nunca disputa com ovelha nenhuma.
+ */
+export function scene(world, spawn, mobs = null) {
   const player = new Player(world, spawn);
   const input = createInput();
-  const interaction = new Interaction(world, player, { add: () => {} }, input);
+  const interaction = new Interaction(world, player, { add: () => {} }, input, mobs);
   const frame = () => interaction.update();          // o que o loop faz antes do clique
   return {
     player, input, interaction, frame,

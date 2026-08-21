@@ -8,6 +8,7 @@
 // que a mira usa, e para antes do primeiro bloco sólido.
 
 import { createAvatar, HEITOR } from '../bots/avatar.js';
+import { createHandPickaxe } from '../render/pickaxe.js';
 import { raycastVoxel } from './raycast.js';
 
 export const FIRST = 0;
@@ -33,9 +34,21 @@ export class View {
     this.mode = FIRST;
     this.onChange = onChange;
 
+    this.scene = scene;
     this.avatar = createAvatar('Heitor', 0x1c1c1f, HEITOR);
     this.avatar.group.visible = false;
     scene.add(this.avatar.group);
+
+    // A picareta em primeira pessoa. Em terceira ela está na mão do boneco, e
+    // sem esta o jogador em primeira pessoa não teria mão nenhuma na tela — o
+    // mundo inteiro atravessado por uma mira flutuante. É ela que diz com o que
+    // se está batendo, e é o que mais rápido faz o jogo parecer um jogo.
+    //
+    // Filha da CÂMERA, não da cena: pendurada na cena, teria de ser
+    // reposicionada por trigonometria a cada frame, e qualquer atraso de um
+    // frame entre olhar e ferramenta se lê na hora como tranco.
+    this.mao = createHandPickaxe();
+    this._maoPendurada = false;
 
     // Aviso de submerso. Fica aqui e não na Interaction porque quem sabe onde a
     // câmera está é a View — e é a posição do OLHO que decide, não a do corpo:
@@ -101,6 +114,18 @@ export class View {
 
     const eye = p.eyePos;
     camera.rotation.order = 'YXZ';
+
+    // A câmera entra na cena junto com a picareta: o Three só percorre (e
+    // desenha) os filhos de quem está no grafo, e uma câmera solta fora dele
+    // levaria a ferramenta para lugar nenhum. Feito uma vez, no primeiro frame,
+    // porque é aqui que a câmera aparece — o construtor não a recebe.
+    if (!this._maoPendurada) {
+      camera.add(this.mao.group);
+      this.scene.add(camera);
+      this._maoPendurada = true;
+    }
+    this.mao.group.visible = this.mode === FIRST;
+    this.mao.animate(dt, this._buildFor > 0);
 
     if (this._underwater) {
       const submerso = this.world.isWater(

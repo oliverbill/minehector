@@ -9,10 +9,11 @@ import { Sky } from './render/sky.js';
 import { Weather } from './render/weather.js';
 import { Input } from './player/input.js';
 import { TouchControls, isTouchDevice } from './player/touch.js';
-import { Player } from './player/player.js';
+import { Player, POUCO_FOLEGO } from './player/player.js';
 import { Interaction } from './player/interaction.js';
 import { View, MODE_NAMES } from './player/view.js';
 import { BotManager } from './bots/botManager.js';
+import { SheepManager } from './mobs/sheep.js';
 
 async function boot() {
   // O jogo tem de rodar mesmo sem IndexedDB. No Safari em navegação privada (e
@@ -49,9 +50,24 @@ async function boot() {
   const player = new Player(world, { x: 8.5, y: spawnY, z: 8.5 });
 
   const input = new Input(canvas);
-  const interaction = new Interaction(world, player, scene, input);
+  // O rebanho nasce antes da Interaction porque é ela quem mira nele: ovelha e
+  // bloco disputam a mesma mira, e quem decide qual dos dois o clique acerta é
+  // a Interaction, não o rebanho.
+  const ovelhas = new SheepManager(scene, world, 6, { x: 8.5, z: 8.5 });
+  const interaction = new Interaction(world, player, scene, input, ovelhas);
   const view = new View(world, player, scene, input, (mode) => interaction.say(MODE_NAMES[mode]));
   const bots = new BotManager(scene, world, 3, aldeiaSalva);
+
+  // Comer é o outro lado da caça: sem isto, a carne caçada não serve para nada.
+  // Entra pelo mesmo caminho da tecla V — no celular é o botão 🍖 que emite a
+  // tecla virtual, e nada abaixo daqui sabe se veio de dedo ou de teclado.
+  input.onKeyPress((code) => {
+    if (code !== 'KeyE') return;
+    const r = player.comer();
+    if (r === 'comeu') interaction.say('carne assada — fôlego de volta');
+    else if (r === 'cheio') interaction.say('você não está com fome');
+    else interaction.say('sem carne — cace uma ovelha');
+  });
   // Mudança de tempo vira recado: sem aviso, começar a nevar é indistinguível
   // de um defeito de render.
   weather.onChange = (tipo) => {
@@ -166,7 +182,7 @@ async function boot() {
   // testar quebrar/colocar bloco num navegador controlado.
   if (location.hash === '#debug') {
     window.__game = {
-      world, player, input, interaction, view, chunkRenderer, bots,
+      world, player, input, interaction, view, chunkRenderer, bots, ovelhas,
       camera, scene, sky, weather,
     };
   }
@@ -175,7 +191,21 @@ async function boot() {
   const posEl = document.getElementById('pos');
   const aldeiaEl = document.getElementById('aldeia');
   const relogioEl = document.getElementById('relogio');
+  const fomeEl = document.getElementById('fome');
   let fpsAcc = 0, fpsFrames = 0;
+
+  // Fôlego em oito casas. Barra e não porcentagem porque a pergunta que o
+  // jogador faz é "dá para correr até lá?", e isso se responde olhando o quanto
+  // sobrou — não lendo um número e convertendo de cabeça.
+  const FOLEGO_CASAS = 8;
+  function pintarFome() {
+    if (!fomeEl) return;
+    const cheias = Math.round(player.folego * FOLEGO_CASAS);
+    const barra = '▮'.repeat(cheias) + '▯'.repeat(FOLEGO_CASAS - cheias);
+    fomeEl.textContent = `🍖 ${player.carne} · ${barra}`
+      + (player.exausto ? ' sem fôlego' : '');
+    fomeEl.classList.toggle('fraco', player.folego <= POUCO_FOLEGO);
+  }
 
   // Seta para a construção mais próxima, relativa a para onde você está olhando.
   // Cinco casas a quinze blocos dentro de uma floresta são invisíveis do spawn.
@@ -198,6 +228,7 @@ async function boot() {
       interaction.update();
     }
     bots.update(dt, player.pos);
+    ovelhas.update(dt, player.pos);
     chunkRenderer.update(player.pos);
     weather.update(dt, player.pos);
     sky.update(dt, player.pos, weather.darkness);
@@ -210,6 +241,8 @@ async function boot() {
       fpsEl.textContent = `${Math.round(fpsFrames / fpsAcc)} fps`;
       posEl.textContent =
         `x ${player.pos.x.toFixed(1)}  y ${player.pos.y.toFixed(1)}  z ${player.pos.z.toFixed(1)}`;
+
+      pintarFome();
 
       if (relogioEl) {
         const faltam = Math.ceil(sky.untilNext / 60);

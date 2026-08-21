@@ -12,9 +12,10 @@
 // proporções não escorregarem quando a altura mudar.
 
 import * as THREE from 'three';
+import { createPickaxe } from '../render/pickaxe.js';
+import { clamp255, shade, surface, material } from '../render/pixelart.js';
 
 const U = 1.8 / 32;   // altura da AABB do bot dividida pelas unidades do boneco
-const PX = 8;         // pixels de textura por unidade (meio-U ainda é nítido)
 
 // Ritmo da martelada. Perto do ritmo de assentamento da obra (9 blocos/s é
 // rápido demais para o olho seguir), mas devagar o bastante para se ler como
@@ -50,10 +51,6 @@ function rngFrom(seed) {
     return s / 4294967296;
   };
 }
-
-const clamp255 = (v) => Math.max(0, Math.min(255, Math.round(v)));
-const shade = ([r, g, b], d) => [clamp255(r + d), clamp255(g + d), clamp255(b + d)];
-const css = ([r, g, b]) => `rgb(${r},${g},${b})`;
 
 function mix(a, b, t) {
   return [
@@ -103,39 +100,13 @@ export const HEITOR = {
   shorts: true,
   longSleeve: true,
   nameTag: false,           // é você: nome flutuando na cara atrapalha
+  tool: 'picareta',         // e a picareta não sai da mão dele
 };
 
-// ---------------------------------------------------------------------------
-// Pintura em coordenadas de U (meio-U também vale)
-// ---------------------------------------------------------------------------
-
-function surface(wu, hu) {
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(wu * PX);
-  canvas.height = Math.round(hu * PX);
-  const ctx = canvas.getContext('2d');
-  const rect = (x, y, w, h, color) => {
-    ctx.fillStyle = css(color);
-    ctx.fillRect(Math.round(x * PX), Math.round(y * PX), Math.round(w * PX), Math.round(h * PX));
-  };
-  // Granulado por meio-U: sem isto o tecido fica liso demais e o boneco parece
-  // um brinquedo de plástico ao lado dos blocos, que são todos texturados.
-  const grain = (x, y, w, h, color, amp, rnd) => {
-    for (let gy = 0; gy < h * 2; gy++) {
-      for (let gx = 0; gx < w * 2; gx++) {
-        rect(x + gx / 2, y + gy / 2, 0.5, 0.5, shade(color, (rnd() - 0.5) * amp));
-      }
-    }
-  };
-  return { canvas, rect, grain };
-}
-
-function material(canvas) {
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  return new THREE.MeshLambertMaterial({ map: tex });
-}
+// As funções de pintura (`surface`, `material`, `shade`) moram em
+// js/render/pixelart.js: o boneco, a picareta que ele segura e as ovelhas são
+// pintados pelo mesmo pincel, e uma segunda cópia divergiria no primeiro ajuste
+// de granulado.
 
 // ---------------------------------------------------------------------------
 // As peças
@@ -424,6 +395,31 @@ function hammer() {
   return g;
 }
 
+// A picareta do jogador, na mesma mão em que o bot leva o martelo — mas esta
+// não some nunca. Ferramenta permanente diz outra coisa que a do bot: o martelo
+// aparece para dizer "estou trabalhando AGORA", e a picareta está lá para dizer
+// "é com isto que eu quebro o mundo", que é verdade a cada clique.
+//
+// Três decisões de pose, todas por causa do que se vê em terceira pessoa:
+//   - escala 0,62, e não 1: uma picareta de 0,95 bloco num boneco de 1,8 é uma
+//     marreta de circo, e a ponta arrastaria no chão com o braço parado;
+//   - girada 45° em torno de Y: com a cabeça atravessada no eixo X, a ponta de
+//     dentro entrava no tronco a cada passada. Na diagonal ela passa à frente
+//     do peito, e de quebra a picareta continua legível tanto de trás (que é a
+//     câmera padrão) quanto de lado;
+//   - quase a prumo, com um tombo pequeno para fora e para a frente: é a pose de
+//     quem CARREGA a ferramenta, com a cabeça na altura do punho e o cabo
+//     descendo ao lado da perna. Inclinada para trás ela desaparecia atrás do
+//     corpo — e a câmera padrão de terceira pessoa é justamente a de trás.
+const PICARETA_ESCALA = 0.62;
+
+function playerPickaxe() {
+  const g = createPickaxe(PICARETA_ESCALA);
+  g.position.set(1.6 * U, -11 * U, 1.2 * U);
+  g.rotation.set(-0.25, Math.PI / 4, -0.30);
+  return g;
+}
+
 function box(wu, hu, du, faces, hangFromTop) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(wu * U, hu * U, du * U), faces);
   // Membro pendurado pelo topo: o pivô fica no ombro/quadril, então a caixa
@@ -493,6 +489,7 @@ export function createAvatar(name, color, overrides = {}) {
     glove: null,
     sock: null,
     nameTag: true,
+    tool: 'martelo',   // 'picareta' = ferramenta permanente (o jogador)
     ...overrides,
   };
 
@@ -509,10 +506,13 @@ export function createAvatar(name, color, overrides = {}) {
   const legL = pivotAt(-2, 12, 0, box(4, 12, 4, legMats, true));
   const legR = pivotAt(2, 12, 0, box(4, 12, 4, legMats, true));
 
-  // O martelo pendura no pivô do braço direito: gira junto com o ombro, como
-  // ferramenta segurada, em vez de flutuar ao lado do corpo.
-  const martelo = hammer();
-  armR.add(martelo);
+  // A ferramenta pendura no pivô do braço direito: gira junto com o ombro, como
+  // ferramenta segurada, em vez de flutuar ao lado do corpo. Quem tem picareta
+  // anda com ela na mão; quem tem martelo só o saca durante a obra.
+  const sempreNaMao = look.tool === 'picareta';
+  const ferramenta = sempreNaMao ? playerPickaxe() : hammer();
+  ferramenta.visible = sempreNaMao;
+  armR.add(ferramenta);
 
   group.add(torso, head, armL, armR, legL, legR);
   if (look.nameTag) group.add(nameSprite(name));
@@ -535,11 +535,16 @@ export function createAvatar(name, color, overrides = {}) {
   let swing = 0;
   let clock = rnd() * 10;
   let marteladas = rnd();           // nem martelam em sincronia
+  let batendo = false;
 
   return {
     group,
-    /** O martelo está à mostra? (para teste e para quem quiser saber) */
-    get building() { return martelo.visible; },
+    /**
+     * Está batendo? Antes isto era "o martelo está visível", o que deixou de
+     * responder à pergunta no dia em que uma ferramenta passou a ficar na mão o
+     * tempo todo — o jogador estaria eternamente construindo.
+     */
+    get building() { return batendo; },
     /**
      * @param {number} dt      segundos desde o último frame
      * @param {number} speed   velocidade horizontal em blocos/s
@@ -556,7 +561,8 @@ export function createAvatar(name, color, overrides = {}) {
       // subida e descida que faz o boneco parecer estar assentando o tijolo, e
       // não parado ao lado dele. Termina cedo para o resto da pose (cabeça,
       // pernas, respiração) continuar valendo por baixo.
-      martelo.visible = building;
+      batendo = building;
+      ferramenta.visible = sempreNaMao || building;
       if (building) {
         marteladas += dt * MARTELADAS_POR_SEGUNDO;
         const arco = Math.sin(marteladas * Math.PI * 2);

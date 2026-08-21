@@ -12,12 +12,23 @@ const REACH = 6;
 // clique atravessava a piscina e ia bater no fundo dela.
 const HITS_BLOCK = (world, x, y, z) => world.isTargetable(x, y, z);
 
+// Carne por ovelha. Duas refeições, quase um fôlego inteiro: uma caçada tem de
+// valer a corrida que custou, senão o jogador aprende a não caçar.
+export const CARNE_POR_OVELHA = 2;
+
 export class Interaction {
-  constructor(world, player, scene, input) {
+  /**
+   * @param {object} [mobs] — SheepManager, ou nada. Opcional porque a mira e a
+   * caça são a MESMA mira: quem não tem bicho no mundo continua com o jogo de
+   * blocos inteiro, e os testes montam a Interaction sem rebanho.
+   */
+  constructor(world, player, scene, input, mobs = null) {
     this.world = world;
     this.player = player;
+    this.mobs = mobs;
     this.selectedBlock = Blocks.GRASS;
     this._target = null;
+    this._mob = null;
     this._crosshair = document.getElementById('crosshair');
     this._toast = document.getElementById('toast');
     this._toastTimer = null;
@@ -36,6 +47,13 @@ export class Interaction {
     scene.add(this._highlight);
 
     input.onMouseButton((button) => {
+      // A ovelha na frente do bloco é acertada primeiro: quem mira o bicho quer
+      // o bicho, e não o barranco atrás dele. Só o botão de quebrar caça — o de
+      // colocar continua assentando bloco, inclusive por cima do rebanho.
+      if (button === 0 && this._mob) {
+        this._cacar(this._mob.sheep);
+        return;
+      }
       if (!this._target) {
         this.say('Nada ao alcance — chegue mais perto');
         return;
@@ -71,6 +89,21 @@ export class Interaction {
     for (const slot of document.querySelectorAll('#hotbar .slot')) {
       slot.classList.toggle('active', Number(slot.dataset.block) === id);
     }
+  }
+
+  // Uma picaretada na ovelha mirada. Ela não morre no primeiro golpe de
+  // propósito: caçar tem de ser uma perseguição, e uma ovelha que cai ao
+  // primeiro clique é um baú com pernas. Quem levou a pancada foge de quem
+  // bateu — daí a posição do jogador ir junto.
+  _cacar(sheep) {
+    const morreu = sheep.hurt(1, this.player.pos);
+    if (morreu) {
+      this.player.carne += CARNE_POR_OVELHA;
+      this.say(`ovelha caçada — +${CARNE_POR_OVELHA} de carne`);
+    } else {
+      this.say('acertou! a ovelha disparou — corra atrás');
+    }
+    return morreu;
   }
 
   // Recado curto no centro da tela. Sem isto, uma recusa é indistinguível de
@@ -154,13 +187,23 @@ export class Interaction {
     this._target = hit;
     this._dir = dir; // guardado com o alvo: a colocação precisa saber onde se mirou
 
-    if (hit) {
+    // Ovelha e bloco disputam a mesma mira, e ganha a mais perto. Sem comparar
+    // o `t` dos dois, dava para caçar através de uma parede — e o contorno
+    // branco continuaria aceso num bloco que o clique não ia tocar.
+    const bicho = this.mobs ? this.mobs.raycast(eye, dir, REACH) : null;
+    this._mob = bicho && (!hit || bicho.t < hit.t) ? bicho : null;
+
+    if (hit && !this._mob) {
       this._highlight.position.set(hit.block.x + 0.5, hit.block.y + 0.5, hit.block.z + 0.5);
       this._highlight.visible = true;
     } else {
       this._highlight.visible = false;
     }
-    // A mira também avisa: apagada quando não há bloco no alcance.
-    if (this._crosshair) this._crosshair.classList.toggle('idle', !hit);
+    // A mira também avisa: apagada quando não há nada no alcance, e vermelha
+    // sobre a ovelha — clicar ali vai bater no bicho, não no chão.
+    if (this._crosshair) {
+      this._crosshair.classList.toggle('idle', !hit && !this._mob);
+      this._crosshair.classList.toggle('bicho', !!this._mob);
+    }
   }
 }

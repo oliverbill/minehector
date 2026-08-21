@@ -24,6 +24,7 @@ await import('./bots.test.mjs');
 await import('./ownership.test.mjs');
 await import('./view.test.mjs');
 await import('./touch.test.mjs');
+await import('./ovelha.test.mjs');
 await import('./water.test.mjs');
 await import('./sky.test.mjs');
 await import('./terrain.test.mjs');

@@ -34,6 +34,11 @@ body.toque .so-toque { display: revert; }
 /* Mira apagada = não há bloco no alcance, então clicar não vai fazer nada. */
 #crosshair.idle { color: #888; opacity: 0.45; }
 
+/* Mira vermelha = há uma ovelha na frente do bloco, e o clique vai nela. O
+   contorno branco do bloco some junto (js/player/interaction.js): duas marcas
+   acesas ao mesmo tempo diriam que o golpe vai para os dois lugares. */
+#crosshair.bicho { color: #ff6a5a; text-shadow: 0 0 4px #000; }
+
 #toast {
   position: fixed; top: 58%; left: 50%; transform: translateX(-50%);
   background: rgba(0, 0, 0, 0.72); color: #ffd9a0;
@@ -104,6 +109,25 @@ body.toque .so-toque { display: revert; }
 
 /* Hora do dia e tempo: estado, não chamado à ação — por isso discreto. */
 #relogio { margin-top: 4px; color: #b9d2e8; }
+
+/* Fôlego. Ganha cor própria porque é estado do corpo, não do mundo: o laranja da
+   carne assada a separa de relance do amarelo da bússola da aldeia e do azul do
+   relógio — três linhas iguais viram um bloco de texto que ninguém lê no meio de
+   uma corrida. */
+#fome { margin-top: 4px; color: #ffb27a; }
+
+/* Sem gás. Piscar em vez de só ficar vermelho porque, correndo, o olho está no
+   centro da tela e não no canto: mudança de cor parada não chama, movimento
+   chama. Devagar (1,2 s) e sem sumir de todo, para avisar sem virar alarme. */
+#fome.fraco {
+  color: #ff8b7a;
+  animation: fome-pisca 1.2s ease-in-out infinite;
+}
+
+@keyframes fome-pisca {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
 
 /* Discreto de propósito: apaga o mundo, e ninguém deve clicar sem querer. */
 #reset {
@@ -182,17 +206,27 @@ body.toque.jogando #touch { display: block; }
   right: calc(14px + env(safe-area-inset-right));
   bottom: calc(14px + env(safe-area-inset-bottom));
   display: grid; gap: 10px;
-  grid-template-columns: repeat(3, 60px);
+  grid-template-columns: repeat(4, 60px);
   grid-template-rows: repeat(2, 60px);
 }
 
 /* Pular ocupa a coluna inteira do canto: é o botão mais apertado do jogo, e o
-   polegar direito cai ali sem procurar. */
+   polegar direito cai ali sem procurar.
+
+   A quarta coluna entrou com o `comer`. Continua cabendo: 4×60 + 3×10 de gap =
+   270 px, mais os 14 px de margem e o `safe-area` da direita — sobra folga num
+   iPhone em pé (390 px) e nem se nota num iPad.
+
+   A célula 1 / 3 fica vazia de propósito. O polegar direito sobe do canto para
+   alcançar o `pular`, e um botão encostado nele seria apertado sem querer no
+   caminho — justamente o erro que mais custa, porque acontece no meio de um
+   pulo. O buraco é o espaço onde o polegar passa. */
 .tbtn[data-action="visao"]   { grid-area: 1 / 1; }
 .tbtn[data-action="menu"]    { grid-area: 1 / 2; }
 .tbtn[data-action="quebrar"] { grid-area: 2 / 1; }
 .tbtn[data-action="colocar"] { grid-area: 2 / 2; }
-.tbtn[data-action="pular"]   { grid-area: 1 / 3 / 3 / 4; }
+.tbtn[data-action="comer"]   { grid-area: 2 / 3; }
+.tbtn[data-action="pular"]   { grid-area: 1 / 4 / 3 / 5; }
 
 .tbtn {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -232,7 +266,7 @@ body.toque #hotbar .key, body.toque #hotbar .nome { display: none; }
 body.toque #hotbar .sw { width: 22px; height: 22px; margin: 0; }
 
 /* Com o hotbar no topo, a HUD desce para não ficar por baixo dele — em retrato
-   as nove peças quebram em duas linhas e cobririam as quatro linhas de estado. */
+   as nove peças quebram em duas linhas e cobririam as cinco linhas de estado. */
 body.toque #hud {
   top: calc(48px + env(safe-area-inset-top));
   font-size: 11px;
